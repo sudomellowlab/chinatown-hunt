@@ -159,8 +159,9 @@ function render(out){
   $("fixcount").textContent = state.fixes;
 
   const dot = $("srcdot"), txt = $("srctxt");
-  dot.className = "dot " + (frozen ? "dead" : source === "real" ? "live" : source === "sim" ? "sim" : "");
-  txt.textContent = frozen ? "feed frozen" : source === "real" ? "live GPS" : source === "sim" ? "simulated" : "no position";
+  const trouble = source === "real" && gpsIssue;
+  dot.className = "dot " + (frozen || trouble ? "dead" : source === "real" ? "live" : source === "sim" ? "sim" : "");
+  txt.textContent = frozen ? "feed frozen" : trouble ? `live GPS · ${gpsIssue}` : source === "real" ? "live GPS" : source === "sim" ? "simulated" : "no position";
 
   // override button
   const ob = $("override");
@@ -239,19 +240,25 @@ $("override").onclick = e => {
    REAL GPS
    ════════════════════════════════════════════════════════════════════ */
 let watchId = null;
+let gpsIssue = null;      // transient trouble shown in the strip; the next real fix clears it
 function startReal(){
   if (!navigator.geolocation) { alert("This browser has no geolocation."); return; }
-  stopSim(); source = "real"; setSrcButtons();
+  stopSim(); source = "real"; gpsIssue = null; setSrcButtons();
   if (watchId !== null) navigator.geolocation.clearWatch(watchId);
   watchId = navigator.geolocation.watchPosition(
-    p => onFix({ lat:p.coords.latitude, lng:p.coords.longitude, accuracy:p.coords.accuracy ?? 999 }),
+    p => { gpsIssue = null; onFix({ lat:p.coords.latitude, lng:p.coords.longitude, accuracy:p.coords.accuracy ?? 999 }); },
     err => {
-      source = "none"; setSrcButtons(); render();
-      const msg = err.code === 1
-        ? "Location permission was refused. Allow it in the browser's site settings, then tap Real GPS again."
-        : err.code === 2 ? "No position available. Move into the open and try again."
-        : "Timed out waiting for a fix.";
-      alert(msg);
+      if (err.code === 1) {
+        // Permission refused: this watch will never deliver. Stop it and say so, once.
+        navigator.geolocation.clearWatch(watchId); watchId = null;
+        source = "none"; gpsIssue = null; setSrcButtons(); render();
+        alert("Location permission was refused. Allow it in the browser's site settings, then tap Real GPS again.");
+      } else {
+        // Unavailable (2) or timeout (3) is routine among tall buildings, and the watch keeps
+        // running. Show it in the strip without interrupting; never alert mid-walk.
+        gpsIssue = err.code === 2 ? "no signal" : "waiting for fix";
+        render();
+      }
     },
     { enableHighAccuracy:true, maximumAge:0, timeout:15000 }
   );
@@ -373,25 +380,28 @@ $("pathClear").onclick = () => {
   setSrcButtons();
 };
 
-/* sliders */
-function slider(id, fmt, apply){
+/* sliders — each starts at the value the app is already using and only acts when moved.
+   Applying on load would push the HTML defaults over GAME.defaults and restart the countdown. */
+function slider(id, fmt, apply, initial){
   const el = $(id), out = $(id+"O");
-  const upd = () => { out.textContent = fmt(el.value); apply && apply(el.value); };
-  el.addEventListener("input", upd); upd();
+  if (initial != null) el.value = initial;
+  out.textContent = fmt(initial ?? el.value);
+  el.addEventListener("input", () => { out.textContent = fmt(el.value); apply && apply(el.value); });
 }
 slider("speed",    v => (+v).toFixed(1)+" m/s");
 slider("fakeAcc",  v => v+" m");
 slider("jitter",   v => v+" m");
 slider("interval", v => (v/1000).toFixed(1)+" s", v => { if (sim.timer){ clearInterval(sim.timer); sim.timer = setInterval(emitSim, +v); } });
-slider("ceil",     v => v+" m",  v => { state.cfg.accuracyCeiling = +v; render(); });
-slider("streakN",  v => v,       v => { state.cfg.consecutiveFixes = +v; render(); });
+slider("ceil",     v => v+" m",  v => { state.cfg.accuracyCeiling = +v; render(); }, state.cfg.accuracyCeiling);
+slider("streakN",  v => v,       v => { state.cfg.consecutiveFixes = +v; render(); }, state.cfg.consecutiveFixes);
 slider("defRad",   v => v+" m",  v => {
   state.cfg.radius = +v;
   GAME.locations.forEach(l => { if (l.radius == null) rings[l.id].setRadius(+v); });
   render();
-});
-slider("capRad",   v => v+" m",  v => { const id = capSel.value; if (rings[id]) rings[id].setRadius(+v); });
-slider("clockSet", v => v+" min", v => { state.clockMinutes = +v; state.startedAt = Date.now(); renderClock(); });
+}, state.cfg.radius);
+slider("capRad",   v => v+" m",  v => { const id = capSel.value; if (rings[id]) rings[id].setRadius(+v); },
+  Engine.radiusOf(GAME.locations.find(l => l.id === capSel.value) || {}, state.cfg));
+slider("clockSet", v => v+" min", v => { state.clockMinutes = +v; state.startedAt = Date.now(); renderClock(); }, state.clockMinutes);
 
 $("blowAcc").onclick = () => {
   const p = sim.at || map.getCenter();

@@ -54,22 +54,35 @@ function pickLoiter(locs) {
 
 const test = base.extend({
   app: async ({ page, context }, use) => {
+    let patchHtml = html => html;
     await context.route(`${ORIGIN}/**`, route =>
-      route.fulfill({ contentType: "text/html; charset=utf-8", body: readFileSync(DIST, "utf8") }));
+      route.fulfill({ contentType: "text/html; charset=utf-8", body: patchHtml(readFileSync(DIST, "utf8")) }));
     await context.route(/tile\.openstreetmap\.org/, route => route.abort());   // map tiles: noise, not under test
     await context.grantPermissions(["geolocation"], { origin: ORIGIN });
 
-    // An alert means watchPosition errored. Fail on any, except one known emulation artifact:
-    // Chromium delivers a POSITION_UNAVAILABLE (code 2) error to watchers immediately before every
-    // setGeolocation() update, even on a bare page with default options. Real permission (code 1)
-    // and timeout (code 3) alerts still fail the test.
-    const EMULATION_ARTIFACT = "No position available. Move into the open and try again.";
-    const dialogs = [];
+    // Count watchPosition errors as the app receives them, without changing what it receives.
+    // Chromium's emulation delivers a POSITION_UNAVAILABLE (code 2) error immediately before every
+    // setGeolocation() update, so every test here exercises transient-error handling for free.
+    await page.addInitScript(() => {
+      const geo = navigator.geolocation, watch = geo.watchPosition.bind(geo);
+      window.__geoErrors = [];
+      geo.watchPosition = (ok, err, opts) => watch(ok, e => { window.__geoErrors.push(e.code); err?.(e); }, opts);
+    });
+
+    // No alert may appear unless a test expects exactly that message.
+    const dialogs = [], expectedDialogs = [];
     page.on("dialog", d => { dialogs.push(d.message()); d.dismiss().catch(() => {}); });
 
     let fixes = 0, nudge = 0;
     const app = {
-      async open() { await page.goto(APP); await expect(page.locator(".pin")).toHaveCount(8); },
+      // patch: edit the served HTML, e.g. to change GAME. Throws if the edit doesn't apply.
+      async open({ patch } = {}) {
+        if (patch) patchHtml = html => { const out = patch(html); if (out === html) throw new Error("patch did not apply"); return out; };
+        await page.goto(APP);
+        await expect(page.locator(".pin")).toHaveCount(8);
+      },
+      expectDialog(message) { expectedDialogs.push(message); },
+      geoErrors: () => page.evaluate(() => window.__geoErrors),
 
       // Location data as the app sees it, via the coordinate capture tool's export.
       async locations() {
@@ -105,8 +118,7 @@ const test = base.extend({
       dialogs,
     };
     await use(app);
-    expect(dialogs.filter(m => m !== EMULATION_ARTIFACT), "unexpected watchPosition error alert").toEqual([]);
-    expect(dialogs.length, "at most one emulation artifact per position update").toBeLessThanOrEqual(fixes);
+    expect(dialogs, "no alerts other than the ones the test expects").toEqual(expectedDialogs);
   },
 });
 
@@ -219,4 +231,61 @@ test("the manual override appears after 90s within 60m, and not before", async (
   await expect(app.sheet()).toHaveClass(/\bup\b/);
   await expect(page.locator("#sheetname")).toHaveText(loc.name);
   await expect(app.reached()).toHaveText("1");
+});
+
+/* ── regressions: GPS error handling, settings from GAME ────────────────── */
+
+test("transient GPS errors neither alert nor knock the app off live GPS", async ({ app, page }) => {
+  await app.open();
+  const locs = await app.locations();
+  const start = far(locs);
+
+  await app.startGps(start);
+  for (let i = 1; i <= 3; i++) await app.fix(offset(start, i * 5, 0));
+
+  // Precondition: the app really did receive position-unavailable errors mid-watch.
+  expect((await app.geoErrors()).filter(code => code === 2).length).toBeGreaterThanOrEqual(3);
+  // …and handled them quietly: still live, and the fixture fails the test if any alert appeared.
+  await expect(page.locator("#srctxt")).toHaveText("live GPS");
+  await expect(page.locator("#srcdot")).toHaveClass(/\blive\b/);
+});
+
+test("refused location permission alerts once and stops GPS", async ({ app, page, context }) => {
+  await context.clearPermissions();
+  await app.open();
+  app.expectDialog("Location permission was refused. Allow it in the browser's site settings, then tap Real GPS again.");
+
+  await page.locator("#devbtn").click();
+  await page.locator("#srcReal").click();
+  await expect(page.locator("#srctxt")).toHaveText("no position");
+  await expect.poll(() => app.geoErrors()).toEqual([1]);
+});
+
+test("engine settings come from GAME.defaults, not the drawer's slider positions", async ({ app, page }) => {
+  // Serve a build whose GAME sets a 20 m ceiling; the drawer's HTML slider default is 50 m.
+  await app.open({ patch: html => html.replace("accuracyCeiling: 50,", "accuracyCeiling: 20,") });
+  const locs = await app.locations();
+  const { loc } = pickArrival(locs);
+
+  await app.startGps(far(locs));
+  for (let i = 0; i < 3; i++) await app.fix(loc, 30);          // fine under 50 m, rejected under 20 m
+  await expect(app.reached()).toHaveText("0");
+
+  await page.locator("#devbtn").click();
+  await expect(page.locator("#ceilO")).toHaveText("20 m");
+  await expect(page.locator("#log .rej").first()).toContainText("over 20m ceiling");
+});
+
+test("the countdown carries on across a reload instead of restarting", async ({ app, page }) => {
+  await app.open();
+  await expect(page.locator("#clock")).toHaveText(/^(2:00:00|1:59:5\d)$/);
+
+  // Pretend the game started ten minutes ago, then reload.
+  await page.evaluate(() => {
+    const k = "chinatown-hunt-m1", d = JSON.parse(localStorage.getItem(k));
+    d.startedAt = Date.now() - 10 * 60_000;
+    localStorage.setItem(k, JSON.stringify(d));
+  });
+  await page.reload();
+  await expect(page.locator("#clock")).toHaveText(/^1:(49:[0-5]\d|50:00)$/);
 });

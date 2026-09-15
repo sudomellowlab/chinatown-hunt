@@ -29,7 +29,7 @@ npx playwright test  # browser tests; builds first
 python3 -m http.server 8765 --bind 127.0.0.1   # preview: /src/index.html?dev=1 or /dist/chinatown-hunt.html?dev=1
 ```
 
-Browser tests read location coordinates from the page and pick test positions geometrically, so they survive real coordinates replacing the placeholders. Chromium's geolocation emulation sends a code-2 "position unavailable" error before every emulated update; the tests ignore exactly that alert.
+Browser tests read location coordinates from the page and pick test positions geometrically, so they survive real coordinates replacing the placeholders. Chromium's geolocation emulation sends a code-2 "position unavailable" error before every emulated update, which conveniently exercises the app's transient-error handling; any alert a test doesn't expect fails it.
 
 `src/` needs a local server because it loads modules; `dist/` also opens by double-clicking. `?dev=1` turns on the location emulator. Ask before adding any dependency; Leaflet and Playwright are the only ones agreed.
 
