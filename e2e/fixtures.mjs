@@ -75,33 +75,39 @@ export const test = base.extend({
 
     let fixes = 0, nudge = 0;
     const app = {
+      // query: "?dev=1" (default) shows the admin tools; "" is what a participant opens.
       // patch: edit the served HTML, e.g. to change GAME. Throws if the edit doesn't apply.
-      async open({ patch } = {}) {
+      async open({ patch, query = "?dev=1" } = {}) {
         if (patch) patchHtml = html => { const out = patch(html); if (out === html) throw new Error("patch did not apply"); return out; };
-        await page.goto(APP);
+        await page.goto(APP + query);
         await expect(page.locator(".pin")).toHaveCount(8);
+        await app.closeTools();                  // start every test from the map, as a participant sees it
       },
+      // Open or close the admin & dev tools, whatever state they are in.
+      toolsOpen: () => page.locator("#drawer").evaluate(el => el.classList.contains("up")),
+      async openTools() { if (!(await app.toolsOpen())) await page.locator("#devbtn").click(); },
+      async closeTools() { if (await app.toolsOpen()) await page.locator("#drawerclose").click(); },
       expectDialog(message, { accept: yes = false } = {}) { expectedDialogs.push(message); if (yes) accept.add(message); },
       geoErrors: () => page.evaluate(() => window.__geoErrors),
 
       // Location data as the app sees it, via the coordinate capture tool's export.
       async locations() {
-        await page.locator("#devbtn").click();
+        await app.openTools();
         await page.locator("#capExport").click();
         const locs = JSON.parse(await page.locator("#capOut").inputValue());
-        await page.locator("#drawerclose").click();
+        await app.closeTools();
         return locs;
       },
 
       // Start real GPS from the drawer, with a first fix at `p`.
       async startGps(p, accuracy = GOOD) {
         await context.setGeolocation({ latitude: p.lat, longitude: p.lng, accuracy });
-        await page.locator("#devbtn").click();
+        await app.openTools();
         await page.locator("#srcReal").click();
         await expect(page.locator("#srctxt")).toHaveText("live GPS");
         await expect(page.locator("#fixcount")).toHaveText("1");
         fixes = 1;
-        await page.locator("#drawerclose").click();
+        await app.closeTools();
       },
 
       // Move the emulated position and wait until the app has taken exactly one more fix.

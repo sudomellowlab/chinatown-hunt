@@ -6,7 +6,7 @@
 
 1. On GitHub, open **Actions → CI** and click the latest successful run on `main`.
 2. Under **Artifacts**, download **chinatown-hunt.html**. It downloads as the HTML file itself, not a zip. You need to be signed in to GitHub, and artifacts expire after 30 days, so push a commit to get a fresh one.
-3. Double-click it to open it in a browser, or drag it onto a static HTTPS host such as Netlify Drop to use it on a phone. Real GPS only works over HTTPS. Add `?dev=1` to the URL for the location emulator.
+3. Double-click it to open it in a browser, or drag it onto a static HTTPS host such as Netlify Drop to use it on a phone. Real GPS only works over HTTPS. Participants use the plain link. Add `?dev=1` to the URL once to turn on the admin & dev tools on that device (it remembers), and `?dev=0` to turn them off.
 
 **Want to change it?** Open a Codespace:
 

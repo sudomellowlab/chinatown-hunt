@@ -6,8 +6,11 @@ import { Engine } from "../src/engine.js";
 const THK = "thian-hock-keng";
 const CLUB = "club-street";
 
-const openDrawer  = page => page.locator("#devbtn").click();
-const closeDrawer = page => page.locator("#drawerclose").click();
+// Opening and closing the tools goes through the fixture, which copes with either state.
+let tools;
+test.beforeEach(({ app }) => { tools = app; });
+const openDrawer  = () => tools.openTools();
+const closeDrawer = () => tools.closeTools();
 const select = (page, id) => page.locator("#capTarget").selectOption(id);
 // Start placing and wait for the map to finish zooming to the pin, as a person would before clicking.
 async function startPlacing(page) {

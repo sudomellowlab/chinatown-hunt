@@ -5,8 +5,11 @@ import { test, expect, offset, pickArrival, pickLoiter, far } from "./fixtures.m
 const CLEAN_SLATE = "Replay from a clean slate? This clears opened locations and streaks on this device.";
 const FASTEST = 6;   // index of 120× in the speed slider
 
-const openDrawer  = page => page.locator("#devbtn").click();
-const closeDrawer = page => page.locator("#drawerclose").click();
+// Opening and closing the tools goes through the fixture, which copes with either state.
+let tools;
+test.beforeEach(({ app }) => { tools = app; });
+const openDrawer  = () => tools.openTools();
+const closeDrawer = () => tools.closeTools();
 
 async function downloadWalk(page) {
   const [dl] = await Promise.all([page.waitForEvent("download"), page.locator("#walkDownload").click()]);

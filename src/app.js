@@ -392,8 +392,15 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape" && poiMode) { e.preventDefault(); $("poiDone").click(); }
 });
 
-const devFlag = new URLSearchParams(location.search).get("dev") === "1";
-if (devFlag) document.body.classList.add("dev");
+/* Admin & dev tools are hidden from participants. Opening the page with ?dev=1 turns them on,
+   and this device remembers that across reloads; ?dev=0 turns them off again. */
+const DEV_KEY = KEY + ":dev";
+const devParam = new URLSearchParams(location.search).get("dev");
+const wasDev = store.getItem(DEV_KEY) === "1";
+try { if (devParam === "1") store.setItem(DEV_KEY, "1"); if (devParam === "0") store.removeItem(DEV_KEY); } catch(e){}
+const devFlag = devParam === "1" || (devParam !== "0" && store.getItem(DEV_KEY) === "1");
+document.body.classList.toggle("dev", devFlag);
+$("devbtn").hidden = !devFlag;
 
 function setSrcButtons(){
   $("srcReal").classList.toggle("on", source === "real");
@@ -736,4 +743,4 @@ wake();
    BOOT
    ════════════════════════════════════════════════════════════════════ */
 setSrcButtons(); renderLog(); render();
-if (devFlag) toggleDrawer(true);
+if (devParam === "1" && !wasDev) toggleDrawer(true);   // first arrival via a ?dev=1 link: show the tools straight away

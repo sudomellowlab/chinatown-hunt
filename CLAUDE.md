@@ -2,7 +2,7 @@
 
 A GPS treasure hunt for one phone per team, walking eight locations around Telok Ayer and Ann Siang Hill in Singapore. Walking into a location's geofence opens it, and each location presents a sequence of tasks. It ships as one self-contained HTML file on a static HTTPS host: no backend, no accounts, progress stored in `localStorage`.
 
-**Two audiences.** Participants play on phones. Admins set locations, replay walks and export data in a desktop browser, where the drawer docks as a panel beside the map (960 px and wider); on a phone it is a full-screen sheet. Design admin features for a computer first.
+**Two audiences.** Participants play on phones. Admins set locations, replay walks and export data in a desktop browser, where the drawer docks as a panel beside the map (960 px and wider); on a phone it is a full-screen sheet. Design admin features for a computer first. The tools only exist behind `?dev=1`, which the device remembers; `?dev=0` turns them off. Participants get the plain link.
 
 ## Layout
 

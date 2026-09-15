@@ -38,10 +38,10 @@ test("fixes with accuracy above the ceiling open nothing", async ({ app, page })
   await expect(app.sheet()).not.toHaveClass(/\bup\b/);
 
   // The rejections are visible in the fix log, with the reason.
-  await page.locator("#devbtn").click();
+  await app.openTools();
   await expect(page.locator("#log .rej")).toHaveCount(5);
   await expect(page.locator("#log .rej").first()).toContainText(`over ${CEILING}m ceiling`);
-  await page.locator("#drawerclose").click();
+  await app.closeTools();
 
   // Accuracy exactly at the ceiling is accepted — and the rejected fixes didn't count toward the streak.
   await app.fix(loc, CEILING);
@@ -136,7 +136,7 @@ test("refused location permission alerts once and stops GPS", async ({ app, page
   await app.open();
   app.expectDialog("Location permission was refused. Allow it in the browser's site settings, then tap Real GPS again.");
 
-  await page.locator("#devbtn").click();
+  await app.openTools();
   await page.locator("#srcReal").click();
   await expect(page.locator("#srctxt")).toHaveText("no position");
   await expect.poll(() => app.geoErrors()).toEqual([1]);
@@ -152,7 +152,7 @@ test("engine settings come from GAME.defaults, not the drawer's slider positions
   for (let i = 0; i < 3; i++) await app.fix(loc, 30);          // fine under 50 m, rejected under 20 m
   await expect(app.reached()).toHaveText("0");
 
-  await page.locator("#devbtn").click();
+  await app.openTools();
   await expect(page.locator("#ceilO")).toHaveText("20 m");
   await expect(page.locator("#log .rej").first()).toContainText("over 20m ceiling");
 });
