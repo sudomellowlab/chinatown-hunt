@@ -1,7 +1,11 @@
-// Inlines src/ into one self-contained HTML file. Plain Node, no dependencies.
-//   node build.js   →   dist/chinatown-hunt.html
+// Builds the two deliverables from src/. Plain Node, no dependencies.
+//   node build.js   →   dist/chinatown-hunt-admin.html   the admin file: set up, test, export
+//                       dist/chinatown-hunt.html         a participant file with the default game
 import fs from "node:fs";
 import path from "node:path";
+import { GAME } from "./src/game.js";
+import { Pack } from "./src/pack.js";
+
 const root = import.meta.dirname;
 const src = f => fs.readFileSync(path.join(root, "src", f), "utf8");
 const swap = (s, find, repl, what) => {
@@ -9,20 +13,48 @@ const swap = (s, find, repl, what) => {
   return s.replace(find, () => repl);   // function form: no $-pattern surprises
 };
 
-// The libraries and app.js become one inline module, so the import/export glue goes.
-// Each library exports one object, which app.js imports under the same name.
-const LIBS = { "engine.js": "Engine", "session.js": "Walk", "poi.js": "Poi" };
-let app = src("app.js");
-const libs = Object.entries(LIBS).map(([file, name]) => {
-  app = swap(app, `import { ${name} } from "./${file}";\n`, "", `import of ${name} in app.js`);
-  return swap(src(file), `\nexport { ${name} };\n`, "\n", `\`export { ${name} };\` in ${file}`).trim();
-});
-if (/^\s*(import|export)\b/m.test(app + libs.join("\n"))) throw new Error("build: unexpected import/export left over");
+// Each module imports only from sibling modules. Inlined into one <script type="module">,
+// the import and export lines go and the files share a single scope.
+function inline(file, text = src(file)) {
+  const out = text.replace(/^import \{[^}]*\} from "\.\/[\w-]+\.js";\n/gm, "").replace(/^export \{[^}]*\};\n/gm, "");
+  if (/^\s*(import|export)\b/m.test(out)) throw new Error(`build: unexpected import/export left in ${file}`);
+  return out.trim();
+}
 
-let html = src("index.html");
-html = swap(html, '<link rel="stylesheet" href="styles.css">', `<style>\n${src("styles.css")}</style>`, "styles.css link");
-html = swap(html, '<script type="module" src="app.js"></script>', `<script type="module">\n${[...libs, app.trim()].join("\n\n")}\n</script>`, "app.js script tag");
+// The same page for both files; the participant file drops everything between admin markers.
+function page(admin, modules) {
+  let html = src("index.html");
+  if (!admin) {
+    html = html.replace(/<!-- admin:start -->[\s\S]*?<!-- admin:end -->\n?/g, "");
+    html = swap(html, 'data-build="admin"', 'data-build="play"', "data-build attribute");
+  }
+  html = html.replace(/<!-- admin:(start|end) -->\n?/g, "");
+  if (html.includes("admin:start") || html.includes("admin:end")) throw new Error("build: unbalanced admin markers");
+  html = swap(html, '<link rel="stylesheet" href="styles.css">', `<style>\n${src("styles.css")}</style>`, "styles.css link");
+  html = swap(html, '<script type="module" src="admin.js"></script>', `<script type="module">\n${modules.join("\n\n")}\n</script>`, "admin.js script tag");
+  return html;
+}
+
+// Participant page: the game only, with its content left as a slot for a sealed pack.
+const template = page(false, [inline("engine.js"), inline("pack.js"), 'const GAME = Pack.open("__GAME_PACK__");', inline("app.js")]);
+for (const admin of ['id="drawer"', 'id="devbtn"', "setPoi", "Walk.record", "__PARTICIPANT_TEMPLATE__"])
+  if (template.includes(admin)) throw new Error(`build: admin code leaked into the participant file (${admin})`);
+
+// Admin page: everything, plus the participant page embedded so Export can produce it.
+const templateLiteral = JSON.stringify(template).replace(/</g, "\\u003c");
+const adminPage = page(true, [
+  inline("engine.js"), inline("session.js"), inline("poi.js"), inline("pack.js"), inline("game.js"), inline("app.js"),
+  swap(inline("admin.js"), '"__PARTICIPANT_TEMPLATE__"', templateLiteral, "participant template slot in admin.js"),
+]);
+
+// A playable participant file with the default game, as a sanity check and for CI.
+const playable = swap(template, '"__GAME_PACK__"', JSON.stringify(Pack.seal(GAME)), "game pack slot");
+for (const l of GAME.locations)
+  for (const text of [l.name, l.arrivalText])
+    if (text && playable.includes(text)) throw new Error(`build: readable game content in the participant file ("${text.slice(0, 30)}")`);
 
 fs.mkdirSync(path.join(root, "dist"), { recursive: true });
-fs.writeFileSync(path.join(root, "dist", "chinatown-hunt.html"), html);
-console.log(`dist/chinatown-hunt.html  ${(html.length / 1024).toFixed(1)} KB`);
+for (const [name, html] of [["chinatown-hunt-admin.html", adminPage], ["chinatown-hunt.html", playable]]) {
+  fs.writeFileSync(path.join(root, "dist", name), html);
+  console.log(`dist/${name}`.padEnd(32), `${(html.length / 1024).toFixed(1)} KB`);
+}

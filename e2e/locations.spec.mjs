@@ -17,6 +17,18 @@ async function startPlacing(page) {
   await page.locator("#poiPlace").click();
   await expect(page.locator("#poibar")).toBeVisible();
   await expect(page.locator(".leaflet-zoom-anim")).toHaveCount(0);
+  await settled(page, await page.locator("#capTarget").inputValue());
+}
+// Wait until a pin has stopped moving on screen (the map may still be panning or zooming to it).
+async function settled(page, id) {
+  const pin = page.locator(`.pin[data-id="${id}"]`);
+  let last = null;
+  await expect.poll(async () => {
+    const b = await pin.boundingBox();
+    const same = last && Math.abs(b.x - last.x) < 0.5 && Math.abs(b.y - last.y) < 0.5;
+    last = b;
+    return same;
+  }, { intervals: [100] }).toBe(true);
 }
 // Centre of the visible map, in page pixels.
 async function mapCentre(page) {
@@ -67,7 +79,7 @@ test("a location placed by clicking the map opens there, and no longer at its ol
   }
   expect(metres(old, placed), "click 150 px from the pin at zoom 18").toBeGreaterThan(80);
   expect(metres(old, placed)).toBeLessThan(100);
-  await expect(page.locator("#poiInfo")).toContainText("edited on this device");
+  await expect(page.locator("#poiInfo")).toContainText("moved");
   await expect(page.locator("#poibar")).toBeHidden();
   await closeDrawer(page);
 
@@ -88,6 +100,7 @@ test("dragging the pin moves the location", async ({ app, page }) => {
   const old = find(await exported(page), THK);
   await select(page, THK);
   await startPlacing(page);
+  await settled(page, THK);
 
   const pin = page.locator(`.pin[data-id="${THK}"]`);
   const box = await pin.boundingBox();
@@ -116,7 +129,7 @@ test("pasted coordinates and the radius slider set the geofence, and survive a r
   await select(page, CLUB);
   await pasteCoords(page, `https://www.google.com/maps/place/Somewhere/@1.2,103.8,17z/data=!3m1!4b1!4m6!3m5!8m2!3d${lat}!4d${lng}`);
   await setRadius(page, 40);
-  await expect(page.locator("#poiInfo")).toContainText(`${lat.toFixed(6)}, ${lng.toFixed(6)} · radius 40 m · edited on this device`);
+  await expect(page.locator("#poiInfo")).toContainText(`${lat.toFixed(6)}, ${lng.toFixed(6)} · radius 40 m · moved`);
   expect(find(await exported(page), CLUB)).toMatchObject({ lat, lng, radius: 40 });
   await closeDrawer(page);
 
@@ -132,7 +145,7 @@ test("pasted coordinates and the radius slider set the geofence, and survive a r
   await expect(page.locator(".pin")).toHaveCount(8);
   await openDrawer(page);
   await select(page, CLUB);
-  await expect(page.locator("#poiInfo")).toContainText(`${lat.toFixed(6)}, ${lng.toFixed(6)} · radius 40 m · edited on this device`);
+  await expect(page.locator("#poiInfo")).toContainText(`${lat.toFixed(6)}, ${lng.toFixed(6)} · radius 40 m · moved`);
   expect(find(await exported(page), CLUB)).toMatchObject({ lat, lng, radius: 40 });
 });
 
@@ -149,7 +162,7 @@ test("Revert puts a location back to GAME's coordinates", async ({ app, page }) 
 
   await page.locator("#poiRevert").click();
   expect(find(await exported(page), THK)).toEqual(original);
-  await expect(page.locator("#poiInfo")).toContainText("as in GAME");
+  await expect(page.locator("#poiInfo")).toContainText("as in the default game");
   await expect(page.locator("#poiRevert")).toBeDisabled();
   await expect(page.locator("#capRadO")).toHaveText(`${original.radius} m`);
 });
@@ -179,9 +192,8 @@ test("coordinates saved by older builds no longer override GAME", async ({ app, 
 
   // The old progress format stored every location's coordinates alongside progress.
   await page.evaluate(id => {
-    const k = "chinatown-hunt-m1", d = JSON.parse(localStorage.getItem(k));
-    d.locations = [{ id, lat: 1.3, lng: 103.9, radius: 70 }];
-    localStorage.setItem(k, JSON.stringify(d));
+    const d = { opened: [], startedAt: Date.now(), locations: [{ id, lat: 1.3, lng: 103.9, radius: 70 }] };
+    localStorage.setItem("chinatown-hunt-m1", JSON.stringify(d));
   }, THK);
   await page.reload();
   await openDrawer(page);
@@ -247,6 +259,7 @@ test("clicking a pin selects it, and Enter applies pasted coordinates", async ({
 
 // Drag a location's pin by (dx, dy) pixels with the mouse, in small steps like a person would.
 async function dragPin(page, id, dx, dy) {
+  await settled(page, id);
   const box = await page.locator(`.pin[data-id="${id}"]`).boundingBox();
   const x = box.x + box.width / 2, y = box.y + box.height / 2;
   await page.mouse.move(x, y);
@@ -271,7 +284,7 @@ test("with the panel open, any pin can be dragged straight away", async ({ app, 
   expect(metres(old, moved)).toBeGreaterThan(50);
   expect(metres(old, moved)).toBeLessThan(70);
   expect(Math.abs(moved.lng - old.lng) * 111_195).toBeLessThan(5);
-  await expect(page.locator("#poiInfo")).toContainText("edited on this device");
+  await expect(page.locator("#poiInfo")).toContainText("moved");
   const ringAfter = await page.locator("path.leaflet-interactive").nth(1).boundingBox();
   expect(ringAfter.y, "the geofence circle moved with the pin").toBeLessThan(ringBefore.y - 80);
 

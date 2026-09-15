@@ -7,7 +7,8 @@ export { expect };
 // Served from a fake HTTPS origin via request routing: a secure context for geolocation, no server needed.
 const ORIGIN = "https://hunt.test";
 const APP = `${ORIGIN}/chinatown-hunt.html`;
-const DIST = new URL("../dist/chinatown-hunt.html", import.meta.url);
+const ADMIN_FILE = new URL("../dist/chinatown-hunt-admin.html", import.meta.url);
+const PLAY_FILE = new URL("../dist/chinatown-hunt.html", import.meta.url);
 
 export const CEILING = 50;             // GAME.defaults.accuracyCeiling
 export const GOOD = 8;                 // accuracy for fixes that should be accepted
@@ -51,11 +52,13 @@ export function pickLoiter(locs) {
 
 /* ── page driving ──────────────────────────────────────────────────────── */
 
-export const test = base.extend({
-  app: async ({ page, context }, use) => {
+/* Drive one app in one browser page. The test fixture below wraps this for the project's page;
+   tests that need a second device (e.g. a participant phone) call it with their own context. */
+export async function createApp({ page, context }) {
+    let source = () => readFileSync(ADMIN_FILE, "utf8");
     let patchHtml = html => html;
     await context.route(`${ORIGIN}/**`, route =>
-      route.fulfill({ contentType: "text/html; charset=utf-8", body: patchHtml(readFileSync(DIST, "utf8")) }));
+      route.fulfill({ contentType: "text/html; charset=utf-8", body: patchHtml(source()) }));
     await context.route(/tile\.openstreetmap\.org/, route => route.abort());   // map tiles: noise, not under test
     await context.grantPermissions(["geolocation"], { origin: ORIGIN });
 
@@ -64,8 +67,8 @@ export const test = base.extend({
     // setGeolocation() update, so every test here exercises transient-error handling for free.
     await page.addInitScript(() => {
       const geo = navigator.geolocation, watch = geo.watchPosition.bind(geo);
-      window.__geoErrors = [];
-      geo.watchPosition = (ok, err, opts) => watch(ok, e => { window.__geoErrors.push(e.code); err?.(e); }, opts);
+      window.__geoErrors = []; window.__geoWatches = 0;
+      geo.watchPosition = (ok, err, opts) => { window.__geoWatches++; return watch(ok, e => { window.__geoErrors.push(e.code); err?.(e); }, opts); };
     });
 
     // No alert may appear unless a test expects exactly that message.
@@ -75,14 +78,27 @@ export const test = base.extend({
 
     let fixes = 0, nudge = 0;
     const app = {
-      // query: "?dev=1" (default) shows the admin tools; "" is what a participant opens.
+      // file: "admin" (default) or "play" for the default participant file; html: serve this page instead.
       // patch: edit the served HTML, e.g. to change GAME. Throws if the edit doesn't apply.
-      async open({ patch, query = "?dev=1" } = {}) {
-        if (patch) patchHtml = html => { const out = patch(html); if (out === html) throw new Error("patch did not apply"); return out; };
+      async open({ file = "admin", html, patch, query = "" } = {}) {
+        if (html) source = () => html;
+        else source = () => readFileSync(file === "play" ? PLAY_FILE : ADMIN_FILE, "utf8");
+        if (patch) patchHtml = h => { const out = patch(h); if (out === h) throw new Error("patch did not apply"); return out; };
         await page.goto(APP + query);
         await expect(page.locator(".pin")).toHaveCount(8);
-        await app.closeTools();                  // start every test from the map, as a participant sees it
+        if (await page.locator("#drawer").count()) await app.closeTools();   // admin file: start from the map
       },
+      isAdmin: async () => (await page.locator("#drawer").count()) > 0,
+      // Participant file: tap Begin (or Continue) with a first fix at `p`.
+      async begin(p, accuracy = GOOD) {
+        await context.setGeolocation({ latitude: p.lat, longitude: p.lng, accuracy });
+        await page.locator("#startBtn").click();
+        await expect(page.locator("#start")).toBeHidden();
+        await expect(page.locator("#srctxt")).toHaveText("live GPS");
+        await expect(page.locator("#fixcount")).toHaveText("1");
+        fixes = 1;
+      },
+      geoWatches: () => page.evaluate(() => window.__geoWatches),
       // Open or close the admin & dev tools, whatever state they are in.
       toolsOpen: () => page.locator("#drawer").evaluate(el => el.classList.contains("up")),
       async openTools() { if (!(await app.toolsOpen())) await page.locator("#devbtn").click(); },
@@ -123,8 +139,15 @@ export const test = base.extend({
       pin: id => page.locator(`.pin[data-id="${id}"]`),
       dialogs,
     };
+    const done = () => expect(dialogs, "no alerts other than the ones the test expects").toEqual(expectedDialogs);
+    return { app, done };
+}
+
+export const test = base.extend({
+  app: async ({ page, context }, use) => {
+    const { app, done } = await createApp({ page, context });
     await use(app);
-    expect(dialogs, "no alerts other than the ones the test expects").toEqual(expectedDialogs);
+    done();
   },
 });
 

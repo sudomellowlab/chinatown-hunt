@@ -179,3 +179,13 @@ body.placing .leaflet-marker-draggable{cursor:grab}
 body.dev .leaflet-top.leaflet-right{margin-top:70px}
 body.panel .leaflet-marker-draggable{cursor:grab}
 body.panel .leaflet-marker-draggable:active{cursor:grabbing}
+
+/* ---------- start screen ---------- */
+#start{position:fixed;inset:0;z-index:950;background:var(--linen);display:flex;align-items:flex-end;justify-content:center}
+#start .startcard{width:100%;max-width:560px;background:var(--sheet);border-top:2px solid var(--ink);padding:0 22px calc(env(safe-area-inset-bottom) + 24px)}
+#start .rule{height:9px;margin:0 -22px 22px;border-bottom:1px solid var(--ink);background:repeating-linear-gradient(90deg,var(--ink) 0 1px,transparent 1px 13px)}
+#start h1{font-size:30px;line-height:1.1;margin:0 0 14px;font-weight:600}
+#start p{font-size:17px;line-height:1.55;margin:0 0 14px}
+#start p.small{font-size:14px;color:var(--slate)}
+#startBtn{width:100%;margin-top:8px;padding:16px;min-height:52px;background:var(--ink);color:var(--sheet);border:none;font-size:18px}
+.btn.primary{background:var(--ink);color:var(--sheet)}

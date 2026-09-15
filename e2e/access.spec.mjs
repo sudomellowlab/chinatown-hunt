@@ -1,46 +1,78 @@
-// Who sees the admin & dev tools. Participants open the plain link on a phone.
-import { test, expect } from "./fixtures.mjs";
+// Who gets which tools, and how participants start. Phone-sized.
+import { readFileSync } from "node:fs";
+import { test, expect, offset, far } from "./fixtures.mjs";
+import { GAME } from "../src/game.js";
 
-const devbtn = page => page.locator("#devbtn");
-const banner = page => page.locator("#devbanner");
+const PLAY_FILE = new URL("../dist/chinatown-hunt.html", import.meta.url);
 
-test("a participant's link shows no dev button, no banner and no tools", async ({ app, page }) => {
-  await app.open({ query: "" });
-  await expect(devbtn(page)).toBeHidden();
-  await expect(banner(page)).toBeHidden();
-  await expect(page.locator("#drawer")).not.toBeInViewport();
-
-  await page.reload();
-  await expect(devbtn(page)).toBeHidden();
+test("the admin file shows its tools straight away, no link parameter needed", async ({ app, page }) => {
+  await app.open();
+  await expect(page.locator("#devbtn")).toBeVisible();
+  await expect(page.locator("#devbanner")).toBeVisible();
+  await expect(page.locator("#start")).toBeHidden();
+  await app.openTools();
+  await expect(page.locator("#exportGame")).toBeVisible();
 });
 
-test("?dev=1 turns the tools on, opens them once, and this device remembers", async ({ app, page }) => {
-  await page.goto("https://hunt.test/chinatown-hunt.html?dev=1");
-  await expect(page.locator("#drawer")).toHaveClass(/\bup\b/);          // first arrival: tools open
-  await expect(banner(page)).toBeVisible();
-  await app.closeTools();
-  await expect(devbtn(page)).toBeVisible();
+test("the participant file has no admin tools, even with ?dev=1", async ({ app, page }) => {
+  await app.open({ file: "play", query: "?dev=1" });
+  for (const id of ["devbtn", "devbanner", "drawer", "poibar"]) await expect(page.locator(`#${id}`)).toHaveCount(0);
 
-  // Reloading keeps admin mode without reopening the tools every time.
-  await page.reload();
-  await expect(page.locator(".pin")).toHaveCount(8);
-  await expect(page.locator("#drawer")).not.toHaveClass(/\bup\b/);
-  await expect(devbtn(page)).toBeVisible();
-
-  // So does the plain link, on this device.
-  await app.open({ query: "" });
-  await expect(devbtn(page)).toBeVisible();
-  await expect(banner(page)).toBeVisible();
+  // Not hidden but absent: none of the admin code is in the file.
+  const html = readFileSync(PLAY_FILE, "utf8");
+  for (const code of ["setPoi", "Walk.record", "stepReplay", "exportGame", "Poi.parseCoords"]) expect(html).not.toContain(code);
 });
 
-test("?dev=0 turns the tools off again", async ({ app, page }) => {
-  await app.open({ query: "?dev=1" });
-  await expect(devbtn(page)).toBeVisible();
+test("the participant file's source gives away no game content", async () => {
+  const html = readFileSync(PLAY_FILE, "utf8");
+  for (const l of GAME.locations) {
+    expect(html).not.toContain(l.name);
+    expect(html).not.toContain(l.arrivalText);
+    expect(html).not.toContain(String(l.lat));
+    expect(html).not.toContain(String(l.lng));
+  }
+  expect(html).toMatch(/Pack\.open\("cth1\./);
+});
 
-  await app.open({ query: "?dev=0" });
-  await expect(devbtn(page)).toBeHidden();
-  await expect(banner(page)).toBeHidden();
+test("participants start with Begin, which is the only thing that asks for location", async ({ app, page }) => {
+  await app.open({ file: "play" });
+  await expect(page.locator("#start")).toBeVisible();
+  await expect(page.locator("#startTitle")).toHaveText(GAME.title);
+  await expect(page.locator("#startBtn")).toHaveText("Begin");
+  await expect(page.locator("#clock")).toHaveText("2:00:00");
+  expect(await app.geoWatches(), "no location request before Begin").toBe(0);
+  await page.waitForTimeout(1500);
+  await expect(page.locator("#clock"), "the clock doesn't run before Begin").toHaveText("2:00:00");
 
-  await app.open({ query: "" });
-  await expect(devbtn(page)).toBeHidden();
+  const start = far(GAME.locations);
+  await app.begin(start);
+  expect(await app.geoWatches()).toBe(1);
+  await expect(page.locator("#clock")).toHaveText(/^1:59:5\d$/, { timeout: 3000 });
+});
+
+test("a participant who reloads sees Continue and keeps their progress", async ({ app, page }) => {
+  await app.open({ file: "play" });
+  const loc = GAME.locations[0];
+  await app.begin(far(GAME.locations));
+  for (let i = 0; i < 3; i++) await app.fix(offset(loc, 1, i * 120));
+  await expect(page.locator("#reached")).toHaveText("1");
+
+  await page.reload();
+  await expect(page.locator("#start")).toBeVisible();
+  await expect(page.locator("#startBtn")).toHaveText("Continue");
+  await expect(page.locator("#reached")).toHaveText("1");
+  await expect(page.locator(`.pin[data-id="${loc.id}"]`)).toHaveClass(/\breached\b/);
+  expect(await app.geoWatches(), "no location request before Continue").toBe(0);
+
+  await app.begin(far(GAME.locations));
+  await expect(page.locator("#clock")).not.toHaveText("2:00:00");
+});
+
+test("a participant who refuses location is told how to fix it and can try again", async ({ app, page, context }) => {
+  await context.clearPermissions();
+  await app.open({ file: "play" });
+  app.expectDialog("Location permission was refused. Allow location access for this site in your browser settings, then try again.");
+  await page.locator("#startBtn").click();
+  await expect(page.locator("#start")).toBeVisible();
+  await expect(page.locator("#startBtn")).toHaveText("Continue");
 });

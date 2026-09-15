@@ -28,8 +28,16 @@ jobs:
       - name: Build
         run: node build.js
 
-      # archive: false uploads the HTML as-is, so the download is the file itself, not a zip.
-      - name: Upload built HTML
+      # archive: false uploads each HTML as-is, so the download is the file itself, not a zip.
+      - name: Upload the admin file
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/chinatown-hunt-admin.html
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload the participant file (default game)
         uses: actions/upload-artifact@v7
         with:
           path: dist/chinatown-hunt.html

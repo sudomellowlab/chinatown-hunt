@@ -134,7 +134,7 @@ test("transient GPS errors neither alert nor knock the app off live GPS", async 
 test("refused location permission alerts once and stops GPS", async ({ app, page, context }) => {
   await context.clearPermissions();
   await app.open();
-  app.expectDialog("Location permission was refused. Allow it in the browser's site settings, then tap Real GPS again.");
+  app.expectDialog("Location permission was refused. Allow location access for this site in your browser settings, then try again.");
 
   await app.openTools();
   await page.locator("#srcReal").click();
@@ -163,7 +163,7 @@ test("the countdown carries on across a reload instead of restarting", async ({ 
 
   // Pretend the game started ten minutes ago, then reload.
   await page.evaluate(() => {
-    const k = "chinatown-hunt-m1", d = JSON.parse(localStorage.getItem(k));
+    const k = Object.keys(localStorage).find(key => key.startsWith("chinatown-hunt-admin:")), d = JSON.parse(localStorage.getItem(k));
     d.startedAt = Date.now() - 10 * 60_000;
     localStorage.setItem(k, JSON.stringify(d));
   });

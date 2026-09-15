@@ -1,15 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-build="admin">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<title>Historical Hunt — Chinatown · Field Rig</title>
+<title>Historical Hunt</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-<div id="devbanner">emulator active — positions are not real</div>
+<!-- admin:start -->
+<div id="devbanner">admin file — for setting up and testing the game · never give this file to participants</div>
+<!-- admin:end -->
 
 <div id="strip">
   <span><span class="dot" id="srcdot"></span><span id="srctxt">starting…</span></span>
@@ -20,10 +22,12 @@
 
 <div id="map"></div>
 
+<!-- admin:start -->
 <div id="poibar" hidden>
   <span id="poibarText"></span>
   <button id="poiDone">Done</button>
 </div>
+<!-- admin:end -->
 
 <div id="hud">
   <div class="to">nearest unreached</div>
@@ -36,7 +40,9 @@
   <button id="override">I'm standing right here — open it</button>
 </div>
 
-<button id="devbtn">dev</button>
+<!-- admin:start -->
+<button id="devbtn">admin</button>
+<!-- admin:end -->
 
 <div id="sheet">
   <div class="rule"></div>
@@ -47,8 +53,25 @@
   <button id="sheetclose">Back to the map</button>
 </div>
 
+<div id="start" hidden>
+  <div class="startcard">
+    <div class="rule"></div>
+    <h1 id="startTitle"></h1>
+    <p>Walk to each location on the map. When you arrive, it opens by itself.</p>
+    <p class="small">Your phone will ask to use your location. Allow it, or the map can't find you.</p>
+    <button id="startBtn">Begin</button>
+  </div>
+</div>
+
+<!-- admin:start -->
 <div id="drawer">
   <header><h3>Admin &amp; dev tools</h3><button id="drawerclose">close</button></header>
+
+  <div class="grp">
+    <h4>Export game file</h4>
+    <div class="note" id="exportInfo"></div>
+    <div class="row"><button class="btn primary" id="exportGame">Export game file</button></div>
+  </div>
 
   <div class="grp">
     <h4>Locations</h4>
@@ -157,8 +180,9 @@
   </div>
 
 </div>
+<!-- admin:end -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script type="module" src="app.js"></script>
+<script type="module" src="admin.js"></script>
 </body>
 </html>

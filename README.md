@@ -2,11 +2,12 @@
 
 ## Working from a machine with nothing installed
 
-**Just want the app?** Download the built file from CI:
+**Just want to set up a game?** Download the admin file from CI:
 
 1. On GitHub, open **Actions → CI** and click the latest successful run on `main`.
-2. Under **Artifacts**, download **chinatown-hunt.html**. It downloads as the HTML file itself, not a zip. You need to be signed in to GitHub, and artifacts expire after 30 days, so push a commit to get a fresh one.
-3. Double-click it to open it in a browser, or drag it onto a static HTTPS host such as Netlify Drop to use it on a phone. Real GPS only works over HTTPS. Participants use the plain link. Add `?dev=1` to the URL once to turn on the admin & dev tools on that device (it remembers), and `?dev=0` to turn them off.
+2. Under **Artifacts**, download **chinatown-hunt-admin.html**. It downloads as the HTML file itself, not a zip. You need to be signed in to GitHub, and artifacts expire after 30 days, so push a commit to get a fresh one.
+3. Open it in your computer's browser (double-click is fine). Drag the pins where you want them, then click **Export game file**.
+4. Upload the exported `chinatown-hunt.html` to a static HTTPS host such as Netlify Drop and give participants that link. Real GPS only works over HTTPS. Never hand out the admin file.
 
 **Want to change it?** Open a Codespace:
 
@@ -23,7 +24,7 @@
    python3 -m http.server 8765
    ```
 
-   Then open the forwarded port 8765 from the **Ports** tab and go to `/dist/chinatown-hunt.html?dev=1` or `/src/index.html?dev=1`. The forwarded URL is HTTPS. It's private to your GitHub account by default, so to open it on a phone either sign in to GitHub there or set the port's visibility to Public, and set it back afterwards.
+   Then open the forwarded port 8765 from the **Ports** tab and go to `/dist/chinatown-hunt-admin.html` (admin) or `/dist/chinatown-hunt.html` (participant). The forwarded URL is HTTPS. It's private to your GitHub account by default, so to open it on a phone either sign in to GitHub there or set the port's visibility to Public, and set it back afterwards.
 
 The same commands work on any machine with Node 22 (see `.nvmrc`). No `npm install` is needed to build or run the unit tests.
 

@@ -1,38 +1,13 @@
 import { Engine } from "./engine.js";
-import { Walk } from "./session.js";
-import { Poi } from "./poi.js";
+import { GAME } from "./game.js";
 
 /* ════════════════════════════════════════════════════════════════════
-   GAME CONTENT
-   Everything a non-developer needs to edit lives in this one object.
-   COORDINATES BELOW ARE APPROXIMATE PLACEHOLDERS. Walk the route with
-   ?dev=1, set each location in the drawer's Locations panel (tap the
-   map, drag the pin, paste coordinates or use your position), export,
-   and paste the array back over GAME.locations.
+   THE GAME — what participants run on their phones.
+   The participant file contains this and nothing else from the tools:
+   the admin module (admin.js) is left out of it entirely, and plugs in
+   through `hooks` only in the admin file.
    ════════════════════════════════════════════════════════════════════ */
-const GAME = {
-  title: "Historical Hunt — Chinatown",
-  durationMinutes: 120,
-  defaults: { radius: 25, accuracyCeiling: 50, consecutiveFixes: 3 },
-  locations: [
-    { id:"telok-ayer-green", name:"Telok Ayer Green", lat:1.28035, lng:103.84705, radius:25,
-      arrivalText:"You are standing on what was once the shoreline. Telok Ayer means 'water bay' — every step east of here was sea until the reclamation of the 1880s." },
-    { id:"thian-hock-keng", name:"Thian Hock Keng Temple", lat:1.28092, lng:103.84760, radius:22,
-      arrivalText:"The Temple of Heavenly Happiness. Hokkien immigrants came here first to give thanks for surviving the crossing." },
-    { id:"nagore-dargah", name:"Nagore Dargah", lat:1.28065, lng:103.84740, radius:22,
-      arrivalText:"Built by Tamil Muslims from the Coromandel Coast. Note how its upper storey imitates a palace and its lower one a mosque." },
-    { id:"al-abrar", name:"Al-Abrar Mosque", lat:1.27990, lng:103.84690, radius:22,
-      arrivalText:"Once a thatched hut known as Masjid Chulia. The shophouse frontage hides a much older foundation." },
-    { id:"ying-fo-fui-kun", name:"Ying Fo Fui Kun", lat:1.28150, lng:103.84800, radius:22,
-      arrivalText:"A Hakka clan house, and one of the oldest surviving associations in the settlement." },
-    { id:"amoy-street", name:"Amoy Street", lat:1.28000, lng:103.84650, radius:28,
-      arrivalText:"Named for the port the Hokkiens sailed from. Look up: the five-foot way was a legal requirement of the Town Plan." },
-    { id:"club-street", name:"Club Street", lat:1.28120, lng:103.84590, radius:28,
-      arrivalText:"The clan associations and social clubs sat up this slope, above the noise of the trading streets." },
-    { id:"ann-siang-hill", name:"Ann Siang Hill", lat:1.28050, lng:103.84600, radius:28,
-      arrivalText:"Once a nutmeg and clove plantation, later the address of letter-writers and remittance houses." }
-  ]
-};
+const BUILD = document.documentElement.dataset.build === "play" ? "play" : "admin";
 
 /* ════════════════════════════════════════════════════════════════════
    STORAGE — falls back to memory where localStorage is unavailable
@@ -42,8 +17,8 @@ const store = (() => {
   try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return localStorage; }
   catch(e){ const m={}; return { getItem:k=>(k in m?m[k]:null), setItem:(k,v)=>{m[k]=String(v)}, removeItem:k=>{delete m[k]} }; }
 })();
-const KEY = "chinatown-hunt-m1";
-
+// Progress is keyed by the game's permanent id, and kept apart between the admin and participant files.
+const KEY = `chinatown-hunt${BUILD === "admin" ? "-admin" : ""}:${GAME.id}`;
 
 /* ════════════════════════════════════════════════════════════════════
    STATE
@@ -52,11 +27,10 @@ const state = {
   cfg: { ...GAME.defaults },
   streaks: {},
   opened: [],
-  startedAt: null,
+  startedAt: null,       // set when the team taps Begin
   clockMinutes: GAME.durationMinutes,
   fix: null,
   fixes: 0,
-  log: [],
   nearSince: {},         // locId -> fix.t first seen within override range (engine-owned)
   overrideReady: []      // locIds eligible for the manual override, as of the last fix
 };
@@ -65,48 +39,31 @@ function load(){
   try{
     const raw = store.getItem(KEY); if(!raw) return;
     const d = JSON.parse(raw);
-    if (Array.isArray(d.opened)) state.opened = d.opened;
+    if (Array.isArray(d.opened)) state.opened = d.opened.filter(id => GAME.locations.some(l => l.id === id));
     if (d.startedAt) state.startedAt = d.startedAt;
   }catch(e){}
 }
 load();
-if (!state.startedAt) { state.startedAt = Date.now(); save(); }
 
-/* Location edits made in the drawer live on this device only, as edits over GAME.
-   An edit is dropped once GAME no longer has the coordinates it was made against,
-   so a phone never overrides newer coordinates deployed in the code. */
-const POI_KEY = KEY + ":poi";
-const GAME_BASE = structuredClone(GAME.locations);
-const poi = { edits:{}, notice:"" };
-{
-  let stored = {};
-  try { stored = JSON.parse(store.getItem(POI_KEY)) || {}; } catch(e){}
-  const r = Poi.apply(GAME_BASE, stored);
-  GAME.locations = r.locations;
-  poi.edits = r.edits;
-  if (r.stale.length) poi.notice = `Dropped edits for ${r.stale.map(id => GAME_BASE.find(l => l.id === id).name).join(", ")}: GAME's coordinates changed since they were made.`;
-  if (r.stale.length || r.unknown.length) { try { store.setItem(POI_KEY, JSON.stringify(poi.edits)); } catch(e){} }
-}
+/* The position feed. The admin module adds simulated and replayed sources; the game itself only knows real GPS. */
+const feed = { source:"none", frozen:false, gpsIssue:null, watchId:null };
 
-/* Walk recording: every fix the engine sees, kept apart from game progress so that
-   resetting progress never loses a walk. Flushed every few seconds and when the page
-   hides, so a crash or a killed tab loses at most the last few fixes. */
-const WALK_KEY = KEY + ":walk";
-const walk = { log: [], dirty: false, savedAt: null, error: null };
-try { const saved = JSON.parse(store.getItem(WALK_KEY)); if (Array.isArray(saved)) walk.log = saved; } catch(e){}
-function flushWalk(){
-  if (!walk.dirty) return;
-  try { store.setItem(WALK_KEY, JSON.stringify(walk.log)); walk.dirty = false; walk.savedAt = Date.now(); walk.error = null; }
-  catch(e){ walk.error = "Couldn't save the recording on this device (storage full?). Download it now."; }
-}
-setInterval(flushWalk, 5000);
-addEventListener("pagehide", flushWalk);
+/* Extension points for the admin module. In the participant file nothing registers. */
+const hooks = {
+  fix: [],            // (fix, engineOutput, src) after every fix
+  render: [],         // (ranges) after every render
+  beforeSource: [],   // (newSource) before the position source changes
+  hidden: [],         // () when the page is hidden
+  ringStyle: null,    // (id) → Leaflet path style, or null for the default look
+  status: null,       // () → { dot, text } for the status strip, or null for the default
+};
 
 /* ════════════════════════════════════════════════════════════════════
    MAP
    ════════════════════════════════════════════════════════════════════ */
+// Opens framed on the game's own locations, wherever they have been set.
 const map = L.map("map", { zoomControl:false, attributionControl:true })
-  .setView([1.28055, 103.84690], 17);
+  .fitBounds(GAME.locations.map(l => [l.lat, l.lng]), { padding:[40, 40], maxZoom:18 });
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19, attribution: "© OpenStreetMap"
 }).addTo(map);
@@ -139,17 +96,11 @@ function drawYou(fix, simulated){
 /* ════════════════════════════════════════════════════════════════════
    FIX INTAKE — the single entry point
    ════════════════════════════════════════════════════════════════════ */
-let source = "none";      // none | real | sim | replay
-let frozen = false;
-let poiMode = false;       // placing a location by hand (see LOCATIONS)
-
-/* src labels the fix for the recorder, the log and the map marker only; the engine never sees it.
-   Replayed fixes aren't re-recorded, so exporting after a replay doesn't duplicate the walk. */
-function onFix(fix, src = source){
-  if (frozen) return;
+/* src labels the fix for the admin tools and the map marker only; the engine never sees it. */
+function onFix(fix, src = feed.source){
+  if (feed.frozen) return;
   // Stamp with time of receipt unless the fix already carries one (a replay does).
   fix = { ...fix, t: fix.t ?? Date.now() };
-  if (src !== "replay") { Walk.record(walk.log, fix, src); walk.dirty = true; }
   state.fix = fix; state.fixes++;
 
   const out = Engine.ingest(fix, GAME.locations, state.cfg,
@@ -160,7 +111,7 @@ function onFix(fix, src = source){
   state.nearSince = out.nearSince;
   state.overrideReady = out.overrideReady;
 
-  logFix(fix, out, src);
+  hooks.fix.forEach(h => h(fix, out, src));
   drawYou(fix, src !== "real");
   if (out.fired.length) { out.fired.forEach(markReached); openSheet(out.fired[0]); }
   if (grew) save();
@@ -172,10 +123,11 @@ function markReached(id){
   if (el) el.classList.add("reached");
   styleRing(id);
 }
-// Ring look: brass while being placed, jade once reached, dashed ink otherwise.
+// Ring look: jade once reached, dashed ink otherwise (the admin tools may override while editing).
 function styleRing(id){
   const ring = rings[id]; if (!ring) return;
-  if (poiMode && id === capSel.value) ring.setStyle({ color:"#8A6D2F", fillColor:"#8A6D2F", fillOpacity:.15, weight:2, dashArray:null });
+  const custom = hooks.ringStyle?.(id);
+  if (custom) ring.setStyle(custom);
   else if (state.opened.includes(id)) ring.setStyle({ color:"#2E6B5E", fillColor:"#2E6B5E", fillOpacity:.1, weight:1, dashArray:null });
   else ring.setStyle({ color:"#16202B", fillColor:"#16202B", fillOpacity:.05, weight:1, dashArray:"3 5" });
 }
@@ -198,11 +150,13 @@ function render(out){
   $("acc").textContent = state.fix ? Math.round(state.fix.accuracy) : "—";
   $("fixcount").textContent = state.fixes;
 
-  const dot = $("srcdot"), txt = $("srctxt");
-  const trouble = source === "real" && gpsIssue;
-  dot.className = "dot " + (frozen || trouble ? "dead" : source === "real" ? "live" : source === "sim" || source === "replay" ? "sim" : "");
-  txt.textContent = frozen ? "feed frozen" : trouble ? `live GPS · ${gpsIssue}` : source === "real" ? "live GPS"
-    : source === "sim" ? "simulated" : source === "replay" ? `replay ${replaySpeed()}×` : "no position";
+  const trouble = feed.source === "real" && feed.gpsIssue;
+  const status = hooks.status?.() || {
+    dot: trouble ? "dead" : feed.source === "real" ? "live" : "",
+    text: trouble ? `live GPS · ${feed.gpsIssue}` : feed.source === "real" ? "live GPS" : "no position",
+  };
+  $("srcdot").className = "dot " + status.dot;
+  $("srctxt").textContent = status.text;
 
   // override button
   const ob = $("override");
@@ -210,54 +164,16 @@ function render(out){
   ob.classList.toggle("show", !!eligible);
   ob.dataset.id = next ? next.id : "";
 
-  if (drawerOpen) renderState(ranges);
+  hooks.render.forEach(h => h(ranges));
 }
 
 function renderClock(){
   const total = state.clockMinutes*60000;
-  const left = Math.max(0, total - (Date.now() - state.startedAt));
+  const left = state.startedAt ? Math.max(0, total - (Date.now() - state.startedAt)) : total;
   const h = Math.floor(left/3600000), m = Math.floor(left%3600000/60000), s = Math.floor(left%60000/1000);
   $("clock").textContent = `${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
 }
 setInterval(renderClock, 1000); renderClock();
-
-function logFix(fix, out, src){
-  const g = out.ranges[0];
-  const streak = g ? (out.streaks[g.id] || 0) : 0;
-  state.log.unshift({
-    t: new Date(fix.t).toLocaleTimeString([], {hour12:false}),
-    ok: out.screen.ok,
-    why: out.screen.why,
-    acc: Math.round(fix.accuracy),
-    near: g ? `${g.name} ${Math.round(g.d)}m/${g.r}m` : "—",
-    streak: `${streak}/${state.cfg.consecutiveFixes}`,
-    fired: out.fired.length > 0,
-    src
-  });
-  if (drawerOpen) renderWalk();
-  state.log = state.log.slice(0, 20);
-  if (drawerOpen) renderLog();
-}
-
-function renderLog(){
-  $("log").innerHTML = state.log.map(e =>
-    `<div class="${e.fired ? "hit" : e.ok ? "" : "rej"}">${e.t} ${e.src.padEnd(4)} ±${String(e.acc).padStart(3)}m  ${e.ok ? "✓" : "✕"} ${e.why}\n         ${e.near}  streak ${e.streak}${e.fired ? "  ► OPENED" : ""}</div>`
-  ).join("") || `<div style="color:var(--slate)">No fixes yet. Choose a position source above.</div>`;
-}
-
-function renderState(ranges){
-  const f = state.fix;
-  $("state").innerHTML =
-    `fix    ${f ? f.lat.toFixed(6)+", "+f.lng.toFixed(6) : "—"}\n` +
-    `acc    ${f ? "±"+Math.round(f.accuracy)+" m" : "—"}\n` +
-    `source ${source}${frozen ? " (frozen)" : ""}\n` +
-    `fixes  ${state.fixes}\n` +
-    `opened ${state.opened.length} / ${GAME.locations.length}\n` +
-    `ceil   ${state.cfg.accuracyCeiling} m   streak ${state.cfg.consecutiveFixes}   radius ${state.cfg.radius} m\n\n` +
-    (ranges||[]).slice(0,4).map(g =>
-      `${state.opened.includes(g.id) ? "●" : "○"} ${g.name.padEnd(24).slice(0,24)} ${String(Math.round(g.d)).padStart(5)}m  ${(state.streaks[g.id]||0)}/${state.cfg.consecutiveFixes}`
-    ).join("\n");
-}
 
 /* ════════════════════════════════════════════════════════════════════
    ARRIVAL SHEET
@@ -281,24 +197,23 @@ $("override").onclick = e => {
 /* ════════════════════════════════════════════════════════════════════
    REAL GPS
    ════════════════════════════════════════════════════════════════════ */
-let watchId = null;
-let gpsIssue = null;      // transient trouble shown in the strip; the next real fix clears it
 function startReal(){
   if (!navigator.geolocation) { alert("This browser has no geolocation."); return; }
-  stopSim(); pauseReplay(); source = "real"; gpsIssue = null; setSrcButtons();
-  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-  watchId = navigator.geolocation.watchPosition(
-    p => { gpsIssue = null; onFix({ lat:p.coords.latitude, lng:p.coords.longitude, accuracy:p.coords.accuracy ?? 999 }); },
+  hooks.beforeSource.forEach(h => h("real"));
+  feed.source = "real"; feed.gpsIssue = null;
+  stopReal();
+  feed.watchId = navigator.geolocation.watchPosition(
+    p => { feed.gpsIssue = null; onFix({ lat:p.coords.latitude, lng:p.coords.longitude, accuracy:p.coords.accuracy ?? 999 }); },
     err => {
       if (err.code === 1) {
         // Permission refused: this watch will never deliver. Stop it and say so, once.
-        navigator.geolocation.clearWatch(watchId); watchId = null;
-        source = "none"; gpsIssue = null; setSrcButtons(); render();
-        alert("Location permission was refused. Allow it in the browser's site settings, then tap Real GPS again.");
+        stopReal(); feed.source = "none"; feed.gpsIssue = null; render();
+        alert("Location permission was refused. Allow location access for this site in your browser settings, then try again.");
+        if (ui.startScreen) showStart();
       } else {
         // Unavailable (2) or timeout (3) is routine among tall buildings, and the watch keeps
         // running. Show it in the strip without interrupting; never alert mid-walk.
-        gpsIssue = err.code === 2 ? "no signal" : "waiting for fix";
+        feed.gpsIssue = err.code === 2 ? "no signal" : "waiting for fix";
         render();
       }
     },
@@ -306,460 +221,45 @@ function startReal(){
   );
   render();
 }
+function stopReal(){
+  if (feed.watchId !== null) { navigator.geolocation.clearWatch(feed.watchId); feed.watchId = null; }
+}
 
 /* ════════════════════════════════════════════════════════════════════
-   SIMULATOR
+   START SCREEN — location permission is only asked for on this tap.
+   Begin starts the clock; after a reload the same screen offers Continue.
    ════════════════════════════════════════════════════════════════════ */
-const sim = { at:null, timer:null, path:[], playing:false, travelled:0, line:null, marks:[] };
-const M_PER_DEG = 111320;
-
-function setSim(lat, lng){
-  sim.at = { lat, lng };
-  stopSim(); pauseReplay(); source = "sim"; setSrcButtons();
-  if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
-  sim.timer = setInterval(emitSim, +$("interval").value);
-  emitSim();
+const ui = { startScreen: true };      // the admin file turns this off
+function showStart(){
+  $("startTitle").textContent = GAME.title;
+  $("startBtn").textContent = state.startedAt ? "Continue" : "Begin";
+  $("start").hidden = false;
 }
-function stopSim(){ if (sim.timer) { clearInterval(sim.timer); sim.timer = null; } sim.playing = false; $("pathPlay").classList.remove("on"); }
-
-function emitSim(){
-  if (!sim.at) return;
-  if (sim.playing) stepWalk();
-  const j = +$("jitter").value;
-  const dLat = j ? (Math.random()-.5)*2*j/M_PER_DEG : 0;
-  const dLng = j ? (Math.random()-.5)*2*j/(M_PER_DEG*Math.cos(sim.at.lat*Math.PI/180)) : 0;
-  onFix({ lat:sim.at.lat+dLat, lng:sim.at.lng+dLng, accuracy:+$("fakeAcc").value });
-}
-
-function stepWalk(){
-  if (sim.path.length < 2) { sim.playing = false; $("pathPlay").classList.remove("on"); return; }
-  sim.travelled += (+$("speed").value) * (+$("interval").value/1000);
-  let acc = 0;
-  for (let i = 0; i < sim.path.length-1; i++){
-    const a = sim.path[i], b = sim.path[i+1];
-    const seg = Engine.haversine(a[0],a[1],b[0],b[1]);
-    if (acc + seg >= sim.travelled){
-      const t = seg ? (sim.travelled-acc)/seg : 0;
-      sim.at = { lat:a[0]+(b[0]-a[0])*t, lng:a[1]+(b[1]-a[1])*t };
-      return;
-    }
-    acc += seg;
-  }
-  sim.at = { lat:sim.path.at(-1)[0], lng:sim.path.at(-1)[1] };
-  sim.playing = false; $("pathPlay").classList.remove("on");
-}
-
-/* map tapping: place position, or add a path waypoint */
-let tapMode = false, pathMode = false;
-map.on("click", e => {
-  if (poiMode){
-    setPoi(capSel.value, { lat:e.latlng.lat, lng:e.latlng.lng });
-  } else if (pathMode){
-    sim.path.push([e.latlng.lat, e.latlng.lng]);
-    sim.marks.push(L.circleMarker(e.latlng, { radius:4, color:"#8A6D2F", weight:2, fillOpacity:1, fillColor:"#8A6D2F" }).addTo(map));
-    if (sim.line) map.removeLayer(sim.line);
-    sim.line = L.polyline(sim.path, { color:"#8A6D2F", weight:2, dashArray:"5 5" }).addTo(map);
-  } else if (tapMode){
-    setSim(e.latlng.lat, e.latlng.lng);
-  }
-});
-
-/* ════════════════════════════════════════════════════════════════════
-   DRAWER WIRING
-   ════════════════════════════════════════════════════════════════════ */
-let drawerOpen = false;
-/* On a computer screen the drawer is a panel docked beside the map, so admin work
-   (placing locations, replay, exports) never hides the map. On a phone it is a
-   full-screen sheet that gets out of the way whenever the map is needed. */
-const wideScreen = matchMedia("(min-width: 960px)");
-function toggleDrawer(open){
-  drawerOpen = open;
-  $("drawer").classList.toggle("up", open);
-  document.body.classList.toggle("dev", open || devFlag);
-  layoutPanel();
-  if (open){ renderLog(); renderWalk(); renderReplay(); render(); }
-}
-function layoutPanel(){
-  document.body.classList.toggle("panel", drawerOpen && wideScreen.matches);
-  map.invalidateSize();
-  syncPinDragging();
-}
-wideScreen.addEventListener("change", layoutPanel);
-// After a drawer action that needs the map: close the sheet on a phone, stay open beside the map on a computer.
-function makeRoomForMap(){ if (!wideScreen.matches) toggleDrawer(false); }
-$("devbtn").onclick = () => toggleDrawer(true);
-$("drawerclose").onclick = () => toggleDrawer(false);
-document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && poiMode) { e.preventDefault(); $("poiDone").click(); }
-});
-
-/* Admin & dev tools are hidden from participants. Opening the page with ?dev=1 turns them on,
-   and this device remembers that across reloads; ?dev=0 turns them off again. */
-const DEV_KEY = KEY + ":dev";
-const devParam = new URLSearchParams(location.search).get("dev");
-const wasDev = store.getItem(DEV_KEY) === "1";
-try { if (devParam === "1") store.setItem(DEV_KEY, "1"); if (devParam === "0") store.removeItem(DEV_KEY); } catch(e){}
-const devFlag = devParam === "1" || (devParam !== "0" && store.getItem(DEV_KEY) === "1");
-document.body.classList.toggle("dev", devFlag);
-$("devbtn").hidden = !devFlag;
-
-function setSrcButtons(){
-  $("srcReal").classList.toggle("on", source === "real");
-  $("srcSim").classList.toggle("on", source === "sim");
-  $("tapMode").classList.toggle("on", tapMode);
-  $("freeze").classList.toggle("on", frozen);
-  $("pathMode").classList.toggle("on", pathMode);
-  $("poiPlace").classList.toggle("on", poiMode);
-}
-$("srcReal").onclick = startReal;
-$("srcSim").onclick = () => { const c = map.getCenter(); setSim(sim.at?.lat ?? c.lat, sim.at?.lng ?? c.lng); makeRoomForMap(); };
-$("tapMode").onclick = () => { tapMode = !tapMode; if (tapMode) { pathMode = false; endPlacing(); } setSrcButtons(); if (tapMode) makeRoomForMap(); };
-$("freeze").onclick = () => { frozen = !frozen; setSrcButtons(); render(); };
-
-/* jump controls */
-const jumpSel = $("jump"), capSel = $("capTarget");
-GAME.locations.forEach(l => {
-  jumpSel.insertAdjacentHTML("beforeend", `<option value="${l.id}">${l.name}</option>`);
-  capSel.insertAdjacentHTML("beforeend", `<option value="${l.id}">${l.name}</option>`);
-});
-function jumpTo(id, offsetM){
-  const l = GAME.locations.find(x => x.id === id); if (!l) return;
-  const d = (offsetM || 0) / M_PER_DEG;
-  setSim(l.lat + d, l.lng);
-  map.setView([l.lat, l.lng], 18);
-}
-jumpSel.onchange = e => { if (e.target.value){ jumpTo(e.target.value, 0); makeRoomForMap(); } };
-$("jumpIn").onclick  = () => { const id = jumpSel.value || GAME.locations[0].id; const l = GAME.locations.find(x=>x.id===id); jumpTo(id, Engine.radiusOf(l,state.cfg)-4); makeRoomForMap(); };
-$("jumpOut").onclick = () => { const id = jumpSel.value || GAME.locations[0].id; const l = GAME.locations.find(x=>x.id===id); jumpTo(id, Engine.radiusOf(l,state.cfg)+12); makeRoomForMap(); };
-
-/* path controls */
-$("pathMode").onclick = () => { pathMode = !pathMode; if (pathMode) { tapMode = false; endPlacing(); } setSrcButtons(); if (pathMode) makeRoomForMap(); };
-$("pathPlay").onclick = () => {
-  if (sim.path.length < 2) { alert("Draw a path first: tap 'Draw path', then tap two or more points on the map."); return; }
-  sim.travelled = 0; sim.at = { lat:sim.path[0][0], lng:sim.path[0][1] };
-  sim.playing = true; $("pathPlay").classList.add("on");
-  setSim(sim.at.lat, sim.at.lng); sim.playing = true;
-  makeRoomForMap();
+function hideStart(){ $("start").hidden = true; }
+$("startBtn").onclick = () => {
+  if (!state.startedAt) { state.startedAt = Date.now(); save(); renderClock(); }
+  hideStart();
+  startReal();
 };
-$("pathClear").onclick = () => {
-  sim.path = []; sim.playing = false;
-  sim.marks.forEach(m => map.removeLayer(m)); sim.marks = [];
-  if (sim.line) { map.removeLayer(sim.line); sim.line = null; }
-  setSrcButtons();
-};
-
-/* sliders — each starts at the value the app is already using and only acts when moved.
-   Applying on load would push the HTML defaults over GAME.defaults and restart the countdown. */
-function slider(id, fmt, apply, initial){
-  const el = $(id), out = $(id+"O");
-  if (initial != null) el.value = initial;
-  out.textContent = fmt(initial ?? el.value);
-  el.addEventListener("input", () => { out.textContent = fmt(el.value); apply && apply(el.value); });
-}
-slider("speed",    v => (+v).toFixed(1)+" m/s");
-slider("fakeAcc",  v => v+" m");
-slider("jitter",   v => v+" m");
-slider("interval", v => (v/1000).toFixed(1)+" s", v => { if (sim.timer){ clearInterval(sim.timer); sim.timer = setInterval(emitSim, +v); } });
-slider("ceil",     v => v+" m",  v => { state.cfg.accuracyCeiling = +v; render(); }, state.cfg.accuracyCeiling);
-slider("streakN",  v => v,       v => { state.cfg.consecutiveFixes = +v; render(); }, state.cfg.consecutiveFixes);
-slider("defRad",   v => v+" m",  v => {
-  state.cfg.radius = +v;
-  GAME.locations.forEach(l => { if (l.radius == null) rings[l.id].setRadius(+v); });
-  render();
-}, state.cfg.radius);
-slider("capRad",   v => v+" m",  v => setPoi(capSel.value, { radius:+v }),
-  Engine.radiusOf(GAME.locations.find(l => l.id === capSel.value) || {}, state.cfg));
-slider("clockSet", v => v+" min", v => { state.clockMinutes = +v; state.startedAt = Date.now(); renderClock(); }, state.clockMinutes);
-
-$("blowAcc").onclick = () => {
-  const p = sim.at || map.getCenter();
-  onFix({ lat:p.lat, lng:p.lng, accuracy:80 }, "sim");
-  renderLog();
-};
-
-$("forceOpen").onclick = () => {
-  const ranges = state.fix ? Engine.ranges(state.fix, GAME.locations, state.cfg) : Engine.ranges({lat:map.getCenter().lat,lng:map.getCenter().lng,accuracy:10}, GAME.locations, state.cfg);
-  const next = ranges.find(g => !state.opened.includes(g.id)); if (!next) return;
-  state.opened.push(next.id); markReached(next.id); save(); makeRoomForMap(); openSheet(next.id); render();
-};
-$("openAll").onclick = () => { GAME.locations.forEach(l => { if(!state.opened.includes(l.id)) state.opened.push(l.id); markReached(l.id); }); save(); render(); };
-$("reset").onclick = () => {
-  if (!confirm("Clear all game progress? Location edits and the walk recording are kept.")) return;
-  store.removeItem(KEY); location.reload();
-};
-
-/* ════════════════════════════════════════════════════════════════════
-   LOCATIONS — set each POI by hand: tap the map, drag the pin, paste
-   coordinates, or use the current position; the radius slider applies at
-   once. Edits are stored on this device over GAME (see POI_KEY) and take
-   effect in the engine immediately. Export, then paste into GAME.locations
-   to make them permanent for every phone.
-   ════════════════════════════════════════════════════════════════════ */
-function setPoi(id, changes){
-  const base = GAME_BASE.find(l => l.id === id), l = GAME.locations.find(x => x.id === id);
-  if (!base || !l) return;
-  poi.edits = Poi.edit(poi.edits, base, changes);
-  const v = poi.edits[id]?.value ?? { lat:base.lat, lng:base.lng, radius:base.radius };
-  Object.assign(l, { lat:v.lat, lng:v.lng, radius:v.radius ?? undefined });
-  pins[id].setLatLng([l.lat, l.lng]);
-  rings[id].setLatLng([l.lat, l.lng]).setRadius(Engine.radiusOf(l, state.cfg));
-  try { store.setItem(POI_KEY, JSON.stringify(poi.edits)); } catch(e){ poi.notice = "Couldn't save location edits on this device."; }
-  renderPoi(); render();
-}
-
-function renderPoi(){
-  const l = GAME.locations.find(x => x.id === capSel.value); if (!l) return;
-  const n = Object.keys(poi.edits).length, r = Engine.radiusOf(l, state.cfg);
-  $("poiInfo").textContent =
-    `${l.lat.toFixed(6)}, ${l.lng.toFixed(6)} · radius ${r} m · ${poi.edits[l.id] ? "edited on this device" : "as in GAME"}` +
-    (wideScreen.matches ? "\nDrag any pin on the map to move it." : "") +
-    (n ? `\n${n} of ${GAME.locations.length} locations edited on this device only. Export and paste into GAME.locations to keep them.` : "") +
-    (poi.notice ? `\n${poi.notice}` : "");
-  $("capRad").value = r; $("capRadO").textContent = r + " m";
-  $("poiRevert").disabled = !poi.edits[l.id];
-  $("poibarText").textContent = `Placing ${l.name} · radius ${r} m`;
-}
-
-function startPlacing(){
-  const id = capSel.value;
-  poiMode = true; tapMode = false; pathMode = false;
-  document.body.classList.add("placing");
-  syncPinDragging();
-  styleRing(id); setSrcButtons(); renderPoi();
-  $("poibar").hidden = false;
-  map.setView(pins[id].getLatLng(), Math.max(map.getZoom(), 18));
-  makeRoomForMap();
-}
-function endPlacing(){
-  if (!poiMode) return;
-  poiMode = false;
-  document.body.classList.remove("placing");
-  syncPinDragging();
-  GAME.locations.forEach(l => styleRing(l.id));
-  $("poibar").hidden = true; setSrcButtons();
-}
-/* Which pins can be dragged: every pin while the admin panel is open on a computer, so a
-   location can be moved by simply dragging it; on a phone only the one being placed, so
-   panning the map in the field never moves a location by accident. Never for participants. */
-function syncPinDragging(){
-  const all = document.body.classList.contains("panel");
-  GAME.locations.forEach(l => {
-    const on = all || (poiMode && l.id === capSel.value);
-    on ? pins[l.id].dragging.enable() : pins[l.id].dragging.disable();
-  });
-}
-GAME.locations.forEach(l => {
-  pins[l.id].on("dragstart", () => {
-    if (capSel.value !== l.id) { capSel.value = l.id; renderPoi(); }
-  });
-  pins[l.id].on("drag", e => rings[l.id].setLatLng(e.latlng));      // the geofence follows the pin
-  pins[l.id].on("dragend", () => {
-    const ll = pins[l.id].getLatLng();
-    setPoi(l.id, { lat:ll.lat, lng:ll.lng });
-  });
-});
-
-capSel.onchange = () => {
-  const wasPlacing = poiMode;
-  endPlacing(); renderPoi();
-  const l = GAME.locations.find(x => x.id === capSel.value);
-  if (l) map.setView([l.lat, l.lng], 18);
-  if (wasPlacing) startPlacing();
-};
-$("poiPlace").onclick = startPlacing;
-$("poiCoords").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("poiApply").click(); } });
-// With the panel open, clicking a pin selects that location for editing (not while placing another).
-GAME.locations.forEach(l => pins[l.id].on("click", () => {
-  if (!drawerOpen || poiMode || capSel.value === l.id) return;
-  capSel.value = l.id; renderPoi();
-}));
-$("poiDone").onclick = () => { endPlacing(); toggleDrawer(true); };
-$("poiApply").onclick = () => {
-  const id = capSel.value;
-  let p;
-  try { p = Poi.parseCoords($("poiCoords").value); }
-  catch(e){ alert(`Couldn't read those coordinates: ${e.message}.`); return; }
-  const base = GAME_BASE.find(l => l.id === id);
-  const km = Engine.haversine(base.lat, base.lng, p.lat, p.lng) / 1000;
-  setPoi(id, p);
-  $("poiCoords").value = "";
-  if (km > 2) { poi.notice = `Heads up: that is ${km.toFixed(1)} km from where this location was. Check latitude comes first.`; renderPoi(); }
-  map.setView([p.lat, p.lng], 18);
-};
-$("capHere").onclick = () => {
-  if (!state.fix) { alert("No position yet. Start Real GPS or place a simulated position first."); return; }
-  setPoi(capSel.value, { lat:state.fix.lat, lng:state.fix.lng });
-  const l = GAME.locations.find(x => x.id === capSel.value);
-  $("capOut").value = `Set ${l.name} to your position (±${Math.round(state.fix.accuracy)} m accuracy).`;
-};
-$("poiRevert").onclick = () => {
-  const base = GAME_BASE.find(l => l.id === capSel.value); if (!base) return;
-  setPoi(base.id, { lat:base.lat, lng:base.lng, radius:base.radius ?? null });
-};
-
-function locationsJson(){
-  return JSON.stringify(GAME.locations.map(l => ({
-    id:l.id, name:l.name, lat:l.lat, lng:l.lng, radius:Engine.radiusOf(l, state.cfg), arrivalText:l.arrivalText
-  })), null, 2);
-}
-$("capExport").onclick = () => {
-  const json = locationsJson();
-  $("capOut").value = json;
-  if (navigator.clipboard) navigator.clipboard.writeText(json).catch(()=>{});
-  $("capOut").select?.();
-};
-$("poiDownload").onclick = () => {
-  const stamp = Walk.filename().replace("chinatown-walk-", "chinatown-locations-");
-  downloadFile(new File([locationsJson()], stamp, { type:"application/json" }));
-};
-renderPoi();
-
-/* ════════════════════════════════════════════════════════════════════
-   WALK RECORDER — export
-   Download uses a blob link, which iOS Safari 13+ saves to Files; the URL is
-   kept alive for a minute because iOS reads it after the click returns.
-   Share hands the file to the system share sheet (AirDrop, Mail, Save to
-   Files) where the browser supports sharing files.
-   ════════════════════════════════════════════════════════════════════ */
-function walkFile(type){
-  flushWalk();
-  const data = Walk.toWalk(walk.log, {
-    title: GAME.title, cfg: state.cfg,
-    locations: GAME.locations.map(l => ({ ...l, radius: Engine.radiusOf(l, state.cfg) })),
-  });
-  return new File([JSON.stringify(data)], Walk.filename(), { type });
-}
-function renderWalk(){
-  const s = Walk.summary(walk.log);
-  const dur = s.count ? fmtDuration(s.last - s.first) : "0:00:00";
-  const sources = Object.entries(s.bySource).map(([k, n]) => `${k} ${n}`).join(", ");
-  const saved = walk.savedAt ? `saved ${Math.max(0, Math.round((Date.now() - walk.savedAt)/1000))}s ago` : (walk.dirty ? "not saved yet" : "saved");
-  $("walkStatus").textContent = walk.error ||
-    `${s.count} fixes recorded · ${dur}${sources ? ` · ${sources}` : ""}\n${s.count ? saved : "Starts automatically with any position source."}`;
-  $("walkStatus").classList.toggle("bad", !!walk.error);
-}
-function fmtDuration(ms){
-  const t = Math.max(0, Math.round(ms/1000));
-  return `${Math.floor(t/3600)}:${String(Math.floor(t%3600/60)).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`;
-}
-
-$("walkDownload").onclick = () => {
-  if (!walk.log.length) { alert("Nothing recorded yet."); return; }
-  downloadFile(walkFile("application/json"));
-};
-function downloadFile(file){
-  const url = URL.createObjectURL(file);
-  const a = Object.assign(document.createElement("a"), { href:url, download:file.name, rel:"noopener" });
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
-// text/plain is the file type share sheets accept most widely; the .json name is kept.
-const canShareFiles = (() => { try { return !!navigator.canShare?.({ files:[new File(["{}"], "x.json", { type:"text/plain" })] }); } catch(e){ return false; } })();
-$("walkShare").hidden = !canShareFiles;
-$("walkShare").onclick = async () => {
-  if (!walk.log.length) { alert("Nothing recorded yet."); return; }
-  const file = walkFile("text/plain");
-  try { await navigator.share({ files:[file], title:file.name }); }
-  catch(e){ if (e.name !== "AbortError") alert(`Sharing failed (${e.message}). Try Download instead.`); }
-};
-$("walkClear").onclick = () => {
-  if (!walk.log.length || !confirm(`Delete the ${walk.log.length} recorded fixes on this device? Download them first if you need them.`)) return;
-  walk.log = []; walk.dirty = true; flushWalk(); renderWalk();
-};
-
-/* ════════════════════════════════════════════════════════════════════
-   REPLAY — play a walk file back through onFix, exactly like a live feed.
-   Each fix keeps its recorded t, so the engine's timing (the override dwell)
-   matches the original walk at any speed. Only the real-time wait between
-   fixes is scaled, and capped so long pauses in the recording don't stall.
-   ════════════════════════════════════════════════════════════════════ */
-const SPEEDS = [1, 2, 5, 10, 30, 60, 120];
-const MAX_WAIT_MS = 3000;
-const replay = { fixes:[], i:0, timer:null, playing:false, name:"", skipped:0 };
-function replaySpeed(){ return SPEEDS[+$("replaySpeed").value] || 1; }
-
-$("replayFile").onchange = async e => {
-  const file = e.target.files[0]; e.target.value = "";
-  if (!file) return;
-  try {
-    const w = Walk.parse(await file.text());
-    stopReplay();
-    Object.assign(replay, { fixes:w.fixes, i:0, name:file.name, skipped:w.skipped });
-  } catch(err){ alert(`Couldn't load ${file.name}: ${err.message}.`); }
-  renderReplay();
-};
-
-function playReplay(){
-  if (!replay.fixes.length) return;
-  if (replay.i === 0) {
-    const progress = state.opened.length || Object.values(state.streaks).some(Boolean);
-    if (progress && !confirm("Replay from a clean slate? This clears opened locations and streaks on this device.")) return;
-    clearProgress();
-  }
-  stopSim();
-  if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
-  source = "replay"; gpsIssue = null; replay.playing = true;
-  setSrcButtons(); renderReplay(); stepReplay();
-}
-function stepReplay(){
-  if (!replay.playing) return;
-  const f = replay.fixes[replay.i++];
-  onFix({ lat:f.lat, lng:f.lng, accuracy:f.accuracy, t:f.t }, "replay");
-  if (replay.i >= replay.fixes.length) { replay.playing = false; renderReplay(); render(); return; }
-  const gap = Math.max(0, replay.fixes[replay.i].t - f.t);
-  replay.timer = setTimeout(stepReplay, Math.min(gap / replaySpeed(), MAX_WAIT_MS));
-  if (drawerOpen) renderReplay();
-}
-function pauseReplay(){
-  replay.playing = false; clearTimeout(replay.timer); replay.timer = null;
-  if (source === "replay") source = "none";
-  renderReplay();
-}
-function stopReplay(){ pauseReplay(); replay.i = 0; renderReplay(); render(); }
-
-function renderReplay(){
-  const n = replay.fixes.length, done = replay.i >= n && n > 0;
-  $("replayStatus").textContent = !n ? "No walk loaded." :
-    `${replay.name}\nfix ${replay.i} of ${n} · ${fmtDuration((replay.fixes[Math.max(0, replay.i-1)].t) - replay.fixes[0].t)} of ${fmtDuration(replay.fixes[n-1].t - replay.fixes[0].t)}` +
-    (replay.skipped ? ` · ${replay.skipped} unusable entries skipped` : "") + (done ? " · finished" : "");
-  $("replayPlay").disabled = !n;
-  $("replayPlay").textContent = replay.playing ? "Pause" : done ? "Replay again" : replay.i ? "Resume" : "Play";
-  $("replayStop").disabled = !n || (!replay.playing && replay.i === 0);
-}
-$("replayPlay").onclick = () => {
-  if (replay.playing) { pauseReplay(); render(); return; }
-  if (replay.i >= replay.fixes.length) replay.i = 0;
-  playReplay();
-};
-$("replayStop").onclick = stopReplay;
-slider("replaySpeed", v => (SPEEDS[+v] || 1) + "×", () => render());
-
-// Clears opened locations, streaks and override timers, on screen and in storage.
-function clearProgress(){
-  Object.assign(state, { opened:[], streaks:{}, nearSince:{}, overrideReady:[] });
-  GAME.locations.forEach(l => {
-    pins[l.id]?.getElement()?.querySelector(".pin")?.classList.remove("reached");
-    styleRing(l.id);
-  });
-  $("sheet").classList.remove("up");
-  save(); render();
-}
 
 /* ════════════════════════════════════════════════════════════════════
    WAKE LOCK + VISIBILITY
    Position updates stop entirely while the page is backgrounded, so the
    first thing on return must be a fresh fix, not a stale one.
    ════════════════════════════════════════════════════════════════════ */
-let wl = null;
-async function wake(){ try { if ("wakeLock" in navigator) wl = await navigator.wakeLock.request("screen"); } catch(e){} }
+async function wake(){ try { if ("wakeLock" in navigator) await navigator.wakeLock.request("screen"); } catch(e){} }
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible"){ wake(); if (source === "real") startReal(); }
-  else flushWalk();      // iOS may kill a hidden tab without firing pagehide
+  if (document.visibilityState === "visible"){ wake(); if (feed.source === "real") startReal(); }
+  else hooks.hidden.forEach(h => h());      // iOS may kill a hidden tab without firing pagehide
 });
 wake();
 
 /* ════════════════════════════════════════════════════════════════════
    BOOT
    ════════════════════════════════════════════════════════════════════ */
-setSrcButtons(); renderLog(); render();
-if (devParam === "1" && !wasDev) toggleDrawer(true);   // first arrival via a ?dev=1 link: show the tools straight away
+document.title = GAME.title;
+render();
+showStart();
+
+export { BUILD, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing,
+  $, render, renderClock, openSheet, startReal, stopReal, hideStart };
