@@ -73,7 +73,7 @@ body.dev #strip{top:30px;padding-top:7px}
 
 /* ---------- arrival sheet ---------- */
 #sheet{
-  position:fixed;inset:auto 0 0 0;z-index:800;
+  position:fixed;inset:auto 0 0 0;z-index:800;overscroll-behavior:contain;
   transform:translateY(101%);transition:transform .34s cubic-bezier(.2,.7,.3,1);
   background:var(--sheet);border-top:2px solid var(--ink);
   padding:0 20px calc(env(safe-area-inset-bottom) + 20px);
@@ -85,12 +85,25 @@ body.dev #strip{top:30px;padding-top:7px}
 #sheet h2{font-size:27px;line-height:1.1;margin:0 0 4px;font-weight:600}
 #sheet .place{font-size:12px;color:var(--jade);margin-bottom:14px}
 #sheet p{font-size:16px;line-height:1.55;max-width:62ch;margin:0 0 16px}
-#sheet .stub{font-size:13px;color:var(--slate);border-left:2px solid var(--linen-deep);padding-left:12px;margin-bottom:20px}
-#sheet button{width:100%;padding:15px;min-height:48px;background:var(--ink);color:var(--sheet);border:none;font-size:16px}
+#sheet p.small{font-size:14px;color:var(--slate);margin-top:-6px}
+#sheet p.prompt{font-size:20px;line-height:1.4;font-weight:600}
+#sheet p.hint{font-size:16px;border-left:3px solid var(--brass);padding:4px 0 4px 12px;background:rgba(138,109,47,.08)}
+#sheet button{width:100%;padding:15px;min-height:52px;border:none;font-size:17px;margin-top:10px}
+#sheet button.primary{background:var(--ink);color:var(--sheet)}
+#sheet button.primary:disabled{background:var(--slate);opacity:.55}
+#sheet button.secondary{background:transparent;color:var(--ink);border:1px solid var(--ink)}
+#sheet .opts{display:flex;flex-direction:column;gap:9px;margin:4px 0 6px}
+#sheet .opt{margin:0;text-align:left;background:var(--linen);color:var(--ink);border:1.5px solid var(--ink)}
+#sheet .opt[aria-checked="true"]{background:var(--ink);color:var(--sheet)}
+#sheet .answer input{width:100%;font-family:var(--serif);font-size:20px;padding:13px 12px;min-height:52px;border:1.5px solid var(--ink);background:#fff;color:var(--ink)}
+#feedback{font-size:24px;font-weight:600;padding:18px 16px;margin:4px 0 8px;border-left:5px solid}
+#feedback.right{color:var(--jade);border-color:var(--jade);background:rgba(46,107,94,.08)}
+#feedback.wrong{color:var(--mark);border-color:var(--mark);background:rgba(158,43,20,.06)}
+.pin.active{background:var(--brass);border-color:var(--brass);color:#FFF8E6}
 
 /* ---------- dev drawer ---------- */
 #devbtn{
-  position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 142px);z-index:650;
+  position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 142px);z-index:850;   /* above the location sheet */
   width:46px;height:46px;border-radius:50%;border:1px solid var(--ink);
   background:var(--linen);font-size:11px;letter-spacing:.03em;
 }
@@ -189,3 +202,34 @@ body.panel .leaflet-marker-draggable:active{cursor:grabbing}
 #start p.small{font-size:14px;color:var(--slate)}
 #startBtn{width:100%;margin-top:8px;padding:16px;min-height:52px;background:var(--ink);color:var(--sheet);border:none;font-size:18px}
 .btn.primary{background:var(--ink);color:var(--sheet)}
+
+/* ---------- challenge editor (admin) ---------- */
+#drawer h5{margin:16px 0 8px;font-size:14px;font-weight:600;color:var(--ink)}
+.note.inline{display:inline;font-size:11px;margin:0 0 0 6px}
+textarea.prose{font-family:var(--serif);font-size:14px;height:auto;line-height:1.45;margin-bottom:6px}
+.tasklist{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:8px}
+.tasklist li{border:1px solid var(--linen-deep);background:var(--linen);padding:9px 10px}
+.tasklist li.bad{border-color:var(--mark)}
+.tsum{display:flex;gap:10px;align-items:baseline;font-size:12px;color:var(--slate)}
+.tnum{font-family:var(--mono);font-weight:600;color:var(--ink)}
+.tpts{margin-left:auto;font-family:var(--mono)}
+.tprompt{font-size:14px;margin:4px 0 6px}
+.tprob{font-size:12px;color:var(--mark)}
+.tprob:empty{display:none}
+.tbtns{display:flex;gap:6px}
+.tbtns .btn{min-height:36px;padding:6px 10px;flex:0 0 auto;min-width:0}
+.tbtns .tedit{margin-left:auto}
+.taskform{border:1.5px solid var(--ink);background:var(--sheet);padding:4px 12px 12px;margin:6px 0 10px}
+label.stack,div.stack{display:block;font-size:13px;color:var(--slate);margin:8px 0 4px}
+label.stack select,label.stack textarea,label.stack input{display:block;width:100%;margin-top:4px}
+.taskform input[type=text],.taskform input[type=number]{font-family:var(--serif);font-size:14px;padding:9px;border:1px solid var(--ink);background:var(--linen);min-height:40px}
+.pair{display:flex;gap:10px}
+.pair label{flex:1}
+.optrow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.optrow input[type=radio]{width:20px;height:20px;flex:0 0 auto;margin:0}
+.optrow .tfOpt{flex:1}
+.optrow .btn{min-height:36px;min-width:0;flex:0 0 auto;padding:4px 10px}
+details.more{margin-top:12px}
+details.more summary{cursor:pointer;font-size:13px;color:var(--slate)}
+/* While a location sheet is up, keep the admin button clear of the answers. */
+body:has(#sheet.up) #devbtn{bottom:auto;top:calc(env(safe-area-inset-top) + 80px)}

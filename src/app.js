@@ -1,4 +1,5 @@
 import { Engine } from "./engine.js";
+import { Play } from "./play.js";
 import { GAME } from "./game.js";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -25,8 +26,8 @@ const KEY = `chinatown-hunt${BUILD === "admin" ? "-admin" : ""}:${GAME.id}`;
    ════════════════════════════════════════════════════════════════════ */
 const state = {
   cfg: { ...GAME.defaults },
+  progress: Play.emptyProgress(),   // active location, completed locations, answers, hints (see play.js)
   streaks: {},
-  opened: [],
   startedAt: null,       // set when the team taps Begin
   clockMinutes: GAME.durationMinutes,
   fix: null,
@@ -34,16 +35,22 @@ const state = {
   nearSince: {},         // locId -> fix.t first seen within override range (engine-owned)
   overrideReady: []      // locIds eligible for the manual override, as of the last fix
 };
-function save(){ try{ store.setItem(KEY, JSON.stringify({ opened:state.opened, startedAt:state.startedAt })); }catch(e){} }
+function save(){
+  try{ store.setItem(KEY, JSON.stringify({ startedAt:state.startedAt, progress:state.progress })); }catch(e){}
+}
 function load(){
   try{
     const raw = store.getItem(KEY); if(!raw) return;
     const d = JSON.parse(raw);
-    if (Array.isArray(d.opened)) state.opened = d.opened.filter(id => GAME.locations.some(l => l.id === id));
+    state.progress = Play.reconcile(d.progress || {}, GAME);
     if (d.startedAt) state.startedAt = d.startedAt;
   }catch(e){}
 }
 load();
+
+const locationById = id => GAME.locations.find(l => l.id === id);
+// The engine's "opened" set: every location that can no longer be opened by walking into it.
+const openedIds = () => [...state.progress.completed, ...(state.progress.active ? [state.progress.active] : [])];
 
 /* The position feed. The admin module adds simulated and replayed sources; the game itself only knows real GPS. */
 const feed = { source:"none", frozen:false, gpsIssue:null, watchId:null };
@@ -96,42 +103,58 @@ function drawYou(fix, simulated){
 /* ════════════════════════════════════════════════════════════════════
    FIX INTAKE — the single entry point
    ════════════════════════════════════════════════════════════════════ */
-/* src labels the fix for the admin tools and the map marker only; the engine never sees it. */
+/* src labels the fix for the admin tools and the map marker only; the engine never sees it.
+   Only locations that may open right now are given to the engine: while a team is at a
+   location, no other can open (Play.openable). */
 function onFix(fix, src = feed.source){
   if (feed.frozen) return;
   // Stamp with time of receipt unless the fix already carries one (a replay does).
   fix = { ...fix, t: fix.t ?? Date.now() };
   state.fix = fix; state.fixes++;
 
-  const out = Engine.ingest(fix, GAME.locations, state.cfg,
-    { streaks:state.streaks, opened:state.opened, nearSince:state.nearSince });
+  const out = Engine.ingest(fix, Play.openable(GAME.locations, state.progress), state.cfg,
+    { streaks:state.streaks, opened:openedIds(), nearSince:state.nearSince });
   state.streaks = out.streaks;
-  const grew = out.opened.length !== state.opened.length;
-  state.opened = out.opened;
   state.nearSince = out.nearSince;
   state.overrideReady = out.overrideReady;
 
   hooks.fix.forEach(h => h(fix, out, src));
   drawYou(fix, src !== "real");
-  if (out.fired.length) { out.fired.forEach(markReached); openSheet(out.fired[0]); }
-  if (grew) save();
+  // Two overlapping geofences can fire together: only the first opens; the other waits its turn.
+  if (out.fired.length) activateLocation(out.fired[0]);
   render(out);
 }
 
-function markReached(id){
+// Open a location: it becomes the team's active location until every challenge is answered.
+function activateLocation(id){
+  const next = Play.activate(state.progress, id);
+  if (next === state.progress) return false;
+  state.progress = next;
+  ui.feedback = null; ui.choice = null;
+  styleLocation(id); save(); renderSheet(); render();
+  if (navigator.vibrate) { try{ navigator.vibrate([40,60,40]); }catch(e){} }
+  return true;
+}
+
+function markReached(id){ styleLocation(id); }
+function styleLocation(id){
   const el = pins[id]?.getElement()?.querySelector(".pin");
-  if (el) el.classList.add("reached");
+  if (el) {
+    el.classList.toggle("reached", state.progress.completed.includes(id));
+    el.classList.toggle("active", state.progress.active === id);
+  }
   styleRing(id);
 }
-// Ring look: jade once reached, dashed ink otherwise (the admin tools may override while editing).
+// Ring look: jade once done, brass while active, dashed ink otherwise (the admin tools may override while editing).
 function styleRing(id){
   const ring = rings[id]; if (!ring) return;
   const custom = hooks.ringStyle?.(id);
   if (custom) ring.setStyle(custom);
-  else if (state.opened.includes(id)) ring.setStyle({ color:"#2E6B5E", fillColor:"#2E6B5E", fillOpacity:.1, weight:1, dashArray:null });
+  else if (state.progress.completed.includes(id)) ring.setStyle({ color:"#2E6B5E", fillColor:"#2E6B5E", fillOpacity:.1, weight:1, dashArray:null });
+  else if (state.progress.active === id) ring.setStyle({ color:"#8A6D2F", fillColor:"#8A6D2F", fillOpacity:.12, weight:2, dashArray:null });
   else ring.setStyle({ color:"#16202B", fillColor:"#16202B", fillOpacity:.05, weight:1, dashArray:"3 5" });
 }
-state.opened.forEach(markReached);
+GAME.locations.forEach(l => styleLocation(l.id));
 
 /* ════════════════════════════════════════════════════════════════════
    RENDER
@@ -139,14 +162,18 @@ state.opened.forEach(markReached);
 const $ = id => document.getElementById(id);
 
 function render(out){
-  const cfg = state.cfg;
-  const ranges = out?.ranges || (state.fix ? Engine.ranges(state.fix, GAME.locations, cfg) : []);
-  const next = ranges.find(g => !state.opened.includes(g.id));
+  const cfg = state.cfg, p = state.progress;
+  const ranges = out?.ranges || (state.fix ? Engine.ranges(state.fix, Play.openable(GAME.locations, p), cfg) : []);
+  const active = p.active && locationById(p.active);
+  const next = active ? null : ranges.find(g => !p.completed.includes(g.id));
+  const allDone = p.completed.length === GAME.locations.length;
 
-  $("target").textContent = next ? next.name : (state.opened.length === GAME.locations.length ? "All eight reached" : "—");
+  $("targetLabel").textContent = active ? "you are at" : allDone ? "" : "nearest location";
+  $("target").textContent = active ? active.name : next ? next.name : allDone ? "All locations complete" : "—";
   $("metres").textContent = next && state.fix ? Math.round(next.d) : "—";
-  $("reached").textContent = state.opened.length;
+  $("reached").textContent = p.completed.length;
   $("total").textContent = GAME.locations.length;
+  $("score").textContent = Play.totalScore(p);
   $("acc").textContent = state.fix ? Math.round(state.fix.accuracy) : "—";
   $("fixcount").textContent = state.fixes;
 
@@ -158,7 +185,7 @@ function render(out){
   $("srcdot").className = "dot " + status.dot;
   $("srctxt").textContent = status.text;
 
-  // override button
+  // override button: never while a location is in progress
   const ob = $("override");
   const eligible = next && state.overrideReady.includes(next.id);
   ob.classList.toggle("show", !!eligible);
@@ -176,22 +203,126 @@ function renderClock(){
 setInterval(renderClock, 1000); renderClock();
 
 /* ════════════════════════════════════════════════════════════════════
-   ARRIVAL SHEET
+   LOCATION SHEET — arrival text, then each challenge in order, then a
+   summary. It stays up until the location is finished: there is no way
+   to leave a location part-way.
    ════════════════════════════════════════════════════════════════════ */
-function openSheet(id){
-  const l = GAME.locations.find(x => x.id === id); if (!l) return;
-  $("sheetplace").textContent = "reached";
-  $("sheetname").textContent = l.name;
-  $("sheettext").textContent = l.arrivalText || "";
-  $("sheet").classList.add("up");
-  if (navigator.vibrate) { try{ navigator.vibrate([40,60,40]); }catch(e){} }
+const ui = {
+  startScreen: true,     // the admin file turns this off
+  feedback: null,        // { task, result } just after an answer, until Next is tapped
+  choice: null,          // selected option index for the current multiple-choice challenge
+};
+
+// Tiny element builder; text always goes in as textContent, never as HTML.
+function h(tag, props = {}, ...children){
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of children.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : String(c));
+  return el;
 }
-$("sheetclose").onclick = () => $("sheet").classList.remove("up");
+const pts = n => `${n} point${n === 1 ? "" : "s"}`;
+
+function renderSheet(){
+  const l = state.progress.active && locationById(state.progress.active);
+  if (!l) { $("sheet").classList.remove("up"); return; }
+  const stage = Play.stage(l, state.progress);
+  const body = $("stage");
+  $("sheetname").textContent = l.name;
+
+  if (ui.feedback) {
+    const { task, result } = ui.feedback;
+    const more = !!Play.nextTask(l, state.progress);
+    $("sheetplace").textContent = "your answer";
+    body.replaceChildren(
+      h("div", { id:"feedback", class: result.correct ? "right" : "wrong" },
+        result.correct ? `Correct! +${pts(result.points)}` : "Not quite. 0 points."),
+      h("button", { id:"stageBtn", class:"primary", onclick: () => { ui.feedback = null; renderSheet(); } },
+        more ? "Next challenge" : "See your score"),
+    );
+  } else if (stage.kind === "arrival") {
+    $("sheetplace").textContent = "you have arrived";
+    const n = (l.tasks || []).length;
+    body.replaceChildren(
+      h("p", { id:"sheettext" }, l.arrivalText || ""),
+      h("p", { class:"small" }, n ? `${n} challenge${n === 1 ? "" : "s"} here. One answer each, and you finish this location before moving on.` : ""),
+      h("button", { id:"stageBtn", class:"primary", onclick: () => {
+        state.progress = Play.startChallenges(state.progress, l.id); save(); renderSheet();
+      } }, n ? "Start the challenges" : "Continue"),
+    );
+  } else if (stage.kind === "task") {
+    const { task, index, total, hintShown } = stage;
+    $("sheetplace").textContent = `challenge ${index + 1} of ${total}`;
+    const worth = Play.worth(task, hintShown);
+    const submit = h("button", { id:"stageBtn", class:"primary", disabled:true, onclick: () => submitAnswer(readResponse(task)) }, "Submit answer");
+    let answerArea;
+    if (task.type === "multiple_choice") {
+      answerArea = h("div", { class:"opts", role:"radiogroup" }, (task.options || []).map((o, i) =>
+        h("button", { class:"opt", role:"radio", "aria-checked": ui.choice === i ? "true" : "false", "data-index": i, onclick: () => {
+          ui.choice = i;
+          body.querySelectorAll(".opt").forEach(b => b.setAttribute("aria-checked", String(+b.dataset.index === i)));
+          submit.disabled = false;
+        } }, o)));
+      submit.disabled = ui.choice == null;
+    } else {
+      const input = h("input", { id:"answerInput", type:"text", autocomplete:"off", autocapitalize:"off", spellcheck:"false",
+        inputmode: task.type === "number" ? "decimal" : "text", placeholder: task.type === "number" ? "Your number" : "Your answer",
+        oninput: e => { submit.disabled = !e.target.value.trim(); },
+        onkeydown: e => { if (e.key === "Enter" && !submit.disabled) { e.preventDefault(); submit.click(); } } });
+      answerArea = h("div", { class:"answer" }, input);
+    }
+    const hintArea = task.hint
+      ? (hintShown
+          ? h("p", { id:"hintText", class:"hint" }, `Hint: ${task.hint}`)
+          : h("button", { id:"hintBtn", class:"secondary", onclick: () => {
+              state.progress = Play.revealHint(state.progress, task.id); save(); renderSheet();
+            } }, `Show hint (−${pts(Math.min(Play.hintPenaltyFor(task), Play.pointsFor(task)))})`))
+      : null;
+    body.replaceChildren(
+      h("p", { id:"prompt", class:"prompt" }, task.prompt),
+      h("p", { class:"small" }, `Worth ${pts(worth)}. One try only.`),
+      answerArea, hintArea, submit,
+    );
+  } else {
+    $("sheetplace").textContent = "location complete";
+    body.replaceChildren(
+      h("p", { id:"summary", class:"prompt" }, `${stage.correct} of ${stage.total} right · ${pts(stage.score)} here`),
+      h("p", { class:"small" }, `Your total is now ${pts(Play.totalScore(state.progress))}.`),
+      h("button", { id:"stageBtn", class:"primary", onclick: finishActive }, "Back to the map"),
+    );
+  }
+  $("sheet").classList.add("up");
+}
+
+function readResponse(task){
+  if (task.type === "multiple_choice") return ui.choice;
+  return $("answerInput")?.value ?? "";
+}
+
+// Record the one answer to the current challenge and show whether it was right.
+function submitAnswer(response){
+  const l = locationById(state.progress.active); if (!l) return null;
+  const next = Play.nextTask(l, state.progress); if (!next) return null;
+  const { progress, result } = Play.answer(state.progress, next.task, response);
+  state.progress = progress;
+  ui.feedback = { task: next.task, result }; ui.choice = null;
+  save(); renderSheet(); render();
+  return result;
+}
+
+function finishActive(){
+  const l = locationById(state.progress.active); if (!l) return;
+  const next = Play.finish(state.progress, l);
+  if (next === state.progress) return;
+  state.progress = next; ui.feedback = null;
+  styleLocation(l.id); save(); renderSheet(); render();
+}
 
 $("override").onclick = e => {
-  const id = e.target.dataset.id; if (!id) return;
-  if (!state.opened.includes(id)) state.opened.push(id);
-  markReached(id); save(); openSheet(id); render();
+  const id = e.target.dataset.id; if (id) activateLocation(id);
 };
 
 /* ════════════════════════════════════════════════════════════════════
@@ -229,7 +360,6 @@ function stopReal(){
    START SCREEN — location permission is only asked for on this tap.
    Begin starts the clock; after a reload the same screen offers Continue.
    ════════════════════════════════════════════════════════════════════ */
-const ui = { startScreen: true };      // the admin file turns this off
 function showStart(){
   $("startTitle").textContent = GAME.title;
   $("startBtn").textContent = state.startedAt ? "Continue" : "Begin";
@@ -259,7 +389,9 @@ wake();
    ════════════════════════════════════════════════════════════════════ */
 document.title = GAME.title;
 render();
+renderSheet();          // a reload mid-location goes straight back to it
 showStart();
 
-export { BUILD, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing,
-  $, render, renderClock, openSheet, startReal, stopReal, hideStart };
+export { BUILD, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing, styleLocation,
+  $, render, renderClock, renderSheet, activateLocation, submitAnswer, finishActive, locationById,
+  startReal, stopReal, hideStart };

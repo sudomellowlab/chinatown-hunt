@@ -38,6 +38,7 @@ async function mapCentre(page) {
 
 // The app's own export of its locations (drawer must be open).
 async function exported(page) {
+  await page.locator("details.more").evaluate(d => { d.open = true; });
   await page.locator("#capExport").click();
   return JSON.parse(await page.locator("#capOut").inputValue());
 }
@@ -87,10 +88,10 @@ test("a location placed by clicking the map opens there, and no longer at its ol
   await app.startGps(far(before));
   if (clearOfOthers(old, before, THK)) {
     for (let i = 0; i < 3; i++) await app.fix(old);
-    await expect(app.reached()).toHaveText("0");
+    await expect(app.opened()).toHaveCount(0);
   }
   for (let i = 0; i < 3; i++) await app.fix(placed);
-  await expect(app.reached()).toHaveText("1");
+  await expect(app.opened()).toHaveCount(1);
   await expect(page.locator("#sheetname")).toHaveText(old.name);
 });
 
@@ -137,9 +138,9 @@ test("pasted coordinates and the radius slider set the geofence, and survive a r
   const target = { lat, lng };
   await app.startGps(far(locs));
   for (let i = 0; i < 3; i++) await app.fix(offset(target, 45, 90));
-  await expect(app.reached()).toHaveText("0");
+  await expect(app.opened()).toHaveCount(0);
   for (let i = 0; i < 3; i++) await app.fix(offset(target, 35, 90));
-  await expect(app.reached()).toHaveText("1");
+  await expect(app.opened()).toHaveCount(1);
 
   await page.reload();
   await expect(page.locator(".pin")).toHaveCount(8);
@@ -167,7 +168,7 @@ test("Revert puts a location back to GAME's coordinates", async ({ app, page }) 
   await expect(page.locator("#capRadO")).toHaveText(`${original.radius} m`);
 });
 
-test("edits are dropped once GAME's coordinates change, so a phone never overrides the code", async ({ app, page }) => {
+test("your setup is kept when the default game in the code changes", async ({ app, page }) => {
   await app.open();
   await openDrawer(page);
   await select(page, THK);
@@ -175,14 +176,24 @@ test("edits are dropped once GAME's coordinates change, so a phone never overrid
   await select(page, CLUB);
   await pasteCoords(page, "1.281500, 103.845500");
 
-  // Deploy a build where Thian Hock Keng has new coordinates in GAME. Club Street is unchanged.
+  // A new build whose default game has different coordinates for Thian Hock Keng.
   await app.open({ patch: html => html.replace("lat:1.28092, lng:103.84760", "lat:1.28100, lng:103.84770") });
   await openDrawer(page);
   const locs = await exported(page);
-  expect(find(locs, THK)).toMatchObject({ lat: 1.281, lng: 103.8477 });       // GAME wins
-  expect(find(locs, CLUB)).toMatchObject({ lat: 1.2815, lng: 103.8455 });     // untouched edit still applies
-  await expect(page.locator("#poiInfo")).toContainText("Dropped edits for Thian Hock Keng Temple");
-  expect(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("chinatown-hunt-m1:poi"))))).toEqual([CLUB]);
+  expect(find(locs, THK)).toMatchObject({ lat: 1.281234, lng: 103.847654 });   // the admin's work wins
+  expect(find(locs, CLUB)).toMatchObject({ lat: 1.2815, lng: 103.8455 });
+});
+
+test("location moves saved by the previous version are carried into your setup", async ({ app, page }) => {
+  await app.open();
+  await page.evaluate(() => localStorage.setItem("chinatown-hunt-m1:poi", JSON.stringify({
+    "thian-hock-keng": { base: { lat: 1.28092, lng: 103.8476, radius: 22 }, value: { lat: 1.2811, lng: 103.8479, radius: 30 } },
+  })));
+  await page.reload();
+  await expect(page.locator(".pin")).toHaveCount(8);
+  await openDrawer(page);
+  expect(find(await exported(page), THK)).toMatchObject({ lat: 1.2811, lng: 103.8479, radius: 30 });
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("chinatown-hunt-m1:draft"))?.game?.locations?.length)).toBe(8);
 });
 
 test("coordinates saved by older builds no longer override GAME", async ({ app, page }) => {

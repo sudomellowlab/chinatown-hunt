@@ -1,10 +1,12 @@
 import { Engine } from "./engine.js";
 import { Walk } from "./session.js";
 import { Poi } from "./poi.js";
+import { Play } from "./play.js";
 import { Pack } from "./pack.js";
 import { GAME } from "./game.js";
-import { store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing,
-  $, render, renderClock, openSheet, startReal, stopReal, hideStart } from "./app.js";
+import { store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing, styleLocation,
+  $, render, renderClock, renderSheet, activateLocation, submitAnswer, finishActive, locationById,
+  startReal, stopReal, hideStart } from "./app.js";
 
 /* ════════════════════════════════════════════════════════════════════
    ADMIN & DEV TOOLS — only in the admin file (chinatown-hunt-admin.html).
@@ -21,26 +23,46 @@ document.title = `${GAME.title} · Admin`;
 if (!state.startedAt) { state.startedAt = Date.now(); save(); renderClock(); }
 
 /* ════════════════════════════════════════════════════════════════════
-   LOCATION EDITS — stored on this device as edits over GAME. An edit is
-   dropped once GAME no longer has the coordinates it was made against.
+   THE DRAFT — the game as the admin is building it: locations, radii,
+   arrival text and challenges. Saved in this browser on every change and
+   never overwritten by an update to the default game; Export publishes it,
+   Import game file loads a published game back in.
    ════════════════════════════════════════════════════════════════════ */
-const POI_KEY = ADMIN_KEY + ":poi";
-const GAME_BASE = structuredClone(GAME.locations);
-const poi = { edits:{}, notice:"" };
+const DRAFT_KEY = ADMIN_KEY + ":draft";
+const POI_KEY = ADMIN_KEY + ":poi";                // location moves saved by earlier versions, carried into the draft once
+const DEFAULT_GAME = structuredClone(GAME);
+const draft = { notice:"", error:"" };
+const defaultLocation = id => DEFAULT_GAME.locations.find(l => l.id === id);
+
+// Put saved content into the live game, matched by location id, and move pins and rings to suit.
+function applyContent(game){
+  for (const live of GAME.locations) {
+    const saved = game.locations.find(l => l.id === live.id);
+    if (!saved) continue;
+    live.lat = saved.lat; live.lng = saved.lng; live.radius = saved.radius ?? undefined;
+    live.arrivalText = saved.arrivalText ?? "";
+    live.tasks = structuredClone(saved.tasks || []);
+    pins[live.id].setLatLng([live.lat, live.lng]);
+    rings[live.id].setLatLng([live.lat, live.lng]).setRadius(Engine.radiusOf(live, state.cfg));
+  }
+  map.fitBounds(GAME.locations.map(l => [l.lat, l.lng]), { padding:[40, 40], maxZoom:18 });
+}
+function saveDraft(){
+  try { store.setItem(DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), game: gameForExport() })); draft.error = ""; }
+  catch(e){ draft.error = "Couldn't save your changes in this browser (storage full?). Export the game file now to keep them."; }
+  renderExport();
+}
 {
-  let stored = {};
-  try { stored = JSON.parse(store.getItem(POI_KEY)) || {}; } catch(e){}
-  const r = Poi.apply(GAME_BASE, stored);
-  r.locations.forEach(l => {
-    const live = GAME.locations.find(x => x.id === l.id);
-    Object.assign(live, { lat:l.lat, lng:l.lng, radius:l.radius });
-    pins[l.id].setLatLng([l.lat, l.lng]);
-    rings[l.id].setLatLng([l.lat, l.lng]).setRadius(Engine.radiusOf(live, state.cfg));
-  });
-  poi.edits = r.edits;
-  if (r.applied.length) map.fitBounds(GAME.locations.map(l => [l.lat, l.lng]), { padding:[40, 40], maxZoom:18 });
-  if (r.stale.length) poi.notice = `Dropped edits for ${r.stale.map(id => GAME_BASE.find(l => l.id === id).name).join(", ")}: the game's coordinates changed since they were made.`;
-  if (r.stale.length || r.unknown.length) { try { store.setItem(POI_KEY, JSON.stringify(poi.edits)); } catch(e){} }
+  let saved = null;
+  try { saved = JSON.parse(store.getItem(DRAFT_KEY)); } catch(e){}
+  if (saved?.game?.id === GAME.id && Array.isArray(saved.game.locations)) {
+    applyContent(saved.game);
+  } else {
+    let old = {};
+    try { old = JSON.parse(store.getItem(POI_KEY)) || {}; } catch(e){}
+    const r = Poi.apply(DEFAULT_GAME.locations, old);
+    if (r.applied.length) { applyContent({ ...DEFAULT_GAME, locations: r.locations }); queueMicrotask(saveDraft); }
+  }
 }
 
 /* Walk recording: every fix the engine sees, kept apart from game progress so that
@@ -109,10 +131,10 @@ function renderState(ranges){
     `acc    ${f ? "±"+Math.round(f.accuracy)+" m" : "—"}\n` +
     `source ${feed.source}${feed.frozen ? " (frozen)" : ""}\n` +
     `fixes  ${state.fixes}\n` +
-    `opened ${state.opened.length} / ${GAME.locations.length}\n` +
+    `done   ${state.progress.completed.length} / ${GAME.locations.length}   active ${state.progress.active || "—"}   score ${Play.totalScore(state.progress)}\n` +
     `ceil   ${state.cfg.accuracyCeiling} m   streak ${state.cfg.consecutiveFixes}   radius ${state.cfg.radius} m\n\n` +
     (ranges||[]).slice(0,4).map(g =>
-      `${state.opened.includes(g.id) ? "●" : "○"} ${g.name.padEnd(24).slice(0,24)} ${String(Math.round(g.d)).padStart(5)}m  ${(state.streaks[g.id]||0)}/${state.cfg.consecutiveFixes}`
+      `${state.progress.completed.includes(g.id) ? "●" : "○"} ${g.name.padEnd(24).slice(0,24)} ${String(Math.round(g.d)).padStart(5)}m  ${(state.streaks[g.id]||0)}/${state.cfg.consecutiveFixes}`
     ).join("\n");
 }
 
@@ -277,10 +299,27 @@ $("blowAcc").onclick = () => {
 
 $("forceOpen").onclick = () => {
   const ranges = state.fix ? Engine.ranges(state.fix, GAME.locations, state.cfg) : Engine.ranges({lat:map.getCenter().lat,lng:map.getCenter().lng,accuracy:10}, GAME.locations, state.cfg);
-  const next = ranges.find(g => !state.opened.includes(g.id)); if (!next) return;
-  state.opened.push(next.id); markReached(next.id); save(); makeRoomForMap(); openSheet(next.id); render();
+  const next = ranges.find(g => !state.progress.completed.includes(g.id)); if (!next) return;
+  if (activateLocation(next.id)) makeRoomForMap();
 };
-$("openAll").onclick = () => { GAME.locations.forEach(l => { if(!state.opened.includes(l.id)) state.opened.push(l.id); markReached(l.id); }); save(); render(); };
+// Testing shortcuts: answer the current challenge correctly, or answer everything left and finish the location.
+function correctResponse(task){
+  return task.type === "multiple_choice" ? task.answer : task.type === "text" ? (task.accept || [])[0] : String(task.answer);
+}
+$("solveOne").onclick = () => {
+  const l = locationById(state.progress.active); if (!l) { alert("No location is open."); return; }
+  if (ui.feedback) { ui.feedback = null; renderSheet(); }
+  let p = Play.stage(l, state.progress);
+  if (p.kind === "arrival") { state.progress = Play.startChallenges(state.progress, l.id); p = Play.stage(l, state.progress); }
+  if (p.kind === "task") submitAnswer(correctResponse(p.task));
+};
+$("solveAll").onclick = () => {
+  const l = locationById(state.progress.active); if (!l) { alert("No location is open."); return; }
+  state.progress = Play.startChallenges(state.progress, l.id);
+  for (let n = Play.nextTask(l, state.progress); n; n = Play.nextTask(l, state.progress)) submitAnswer(correctResponse(n.task));
+  ui.feedback = null;
+  finishActive();
+};
 $("reset").onclick = () => {
   if (!confirm("Clear all game progress? Location edits and the walk recording are kept.")) return;
   clearProgress();
@@ -293,28 +332,28 @@ $("reset").onclick = () => {
    slider applies at once. Edits take effect in the engine immediately and
    go into the participant file on export.
    ════════════════════════════════════════════════════════════════════ */
+const round6 = x => Math.round(x * 1e6) / 1e6;
 function setPoi(id, changes){
-  const base = GAME_BASE.find(l => l.id === id), l = GAME.locations.find(x => x.id === id);
-  if (!base || !l) return;
-  poi.edits = Poi.edit(poi.edits, base, changes);
-  const v = poi.edits[id]?.value ?? { lat:base.lat, lng:base.lng, radius:base.radius };
-  Object.assign(l, { lat:v.lat, lng:v.lng, radius:v.radius ?? undefined });
+  const l = GAME.locations.find(x => x.id === id); if (!l) return;
+  if ("lat" in changes) l.lat = round6(changes.lat);
+  if ("lng" in changes) l.lng = round6(changes.lng);
+  if ("radius" in changes) l.radius = changes.radius ?? undefined;
   pins[id].setLatLng([l.lat, l.lng]);
   rings[id].setLatLng([l.lat, l.lng]).setRadius(Engine.radiusOf(l, state.cfg));
-  try { store.setItem(POI_KEY, JSON.stringify(poi.edits)); } catch(e){ poi.notice = "Couldn't save location edits on this device."; }
-  renderPoi(); render();
+  saveDraft(); renderPoi(); render();
 }
+const isMoved = l => { const d = defaultLocation(l.id); return !d || d.lat !== l.lat || d.lng !== l.lng || (d.radius ?? null) !== (l.radius ?? null); };
 
 function renderPoi(){
   const l = GAME.locations.find(x => x.id === capSel.value); if (!l) return;
-  const n = Object.keys(poi.edits).length, r = Engine.radiusOf(l, state.cfg);
+  const r = Engine.radiusOf(l, state.cfg);
   $("poiInfo").textContent =
-    `${l.lat.toFixed(6)}, ${l.lng.toFixed(6)} · radius ${r} m · ${poi.edits[l.id] ? "moved" : "as in the default game"}` +
+    `${l.lat.toFixed(6)}, ${l.lng.toFixed(6)} · radius ${r} m · ${isMoved(l) ? "moved" : "as in the default game"}` +
     (wideScreen.matches ? "\nDrag any pin on the map to move it." : "") +
-    (n ? `\n${n} of ${GAME.locations.length} locations moved. Saved in this browser; Export game file to publish them.` : "") +
-    (poi.notice ? `\n${poi.notice}` : "");
+    (draft.notice ? `\n${draft.notice}` : "");
   $("capRad").value = r; $("capRadO").textContent = r + " m";
-  $("poiRevert").disabled = !poi.edits[l.id];
+  $("poiRevert").disabled = !isMoved(l);
+  renderTasks();
   $("poibarText").textContent = `Placing ${l.name} · radius ${r} m`;
   renderExport();
 }
@@ -378,11 +417,12 @@ $("poiApply").onclick = () => {
   let p;
   try { p = Poi.parseCoords($("poiCoords").value); }
   catch(e){ alert(`Couldn't read those coordinates: ${e.message}.`); return; }
-  const base = GAME_BASE.find(l => l.id === id);
-  const km = Engine.haversine(base.lat, base.lng, p.lat, p.lng) / 1000;
+  const before = GAME.locations.find(l => l.id === id);
+  const km = Engine.haversine(before.lat, before.lng, p.lat, p.lng) / 1000;
   setPoi(id, p);
   $("poiCoords").value = "";
-  if (km > 2) { poi.notice = `Heads up: that is ${km.toFixed(1)} km from where this location was. Check latitude comes first.`; renderPoi(); }
+  draft.notice = km > 2 ? `Heads up: that is ${km.toFixed(1)} km from where this location was. Check latitude comes first.` : "";
+  renderPoi();
   map.setView([p.lat, p.lng], 18);
 };
 $("capHere").onclick = () => {
@@ -392,7 +432,7 @@ $("capHere").onclick = () => {
   $("capOut").value = `Set ${l.name} to your position (±${Math.round(state.fix.accuracy)} m accuracy).`;
 };
 $("poiRevert").onclick = () => {
-  const base = GAME_BASE.find(l => l.id === capSel.value); if (!base) return;
+  const base = defaultLocation(capSel.value); if (!base) return;
   setPoi(base.id, { lat:base.lat, lng:base.lng, radius:base.radius ?? null });
 };
 
@@ -435,15 +475,189 @@ function participantHtml(game = gameForExport()){
   return PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).join(JSON.stringify(Pack.seal(game)));
 }
 function renderExport(){
-  const moved = Object.keys(poi.edits).length;
+  const game = gameForExport();
+  const problems = Play.validateGame(game);
+  const moved = GAME.locations.filter(isMoved).length;
+  const challenges = game.locations.reduce((n, l) => n + (l.tasks || []).length, 0);
   $("exportInfo").textContent = !canExport
     ? "Export works in the built admin file (dist/chinatown-hunt-admin.html). Run node build.js."
-    : `${GAME.locations.length} locations${moved ? `, ${moved} moved from the default` : ""}. ` +
-      `The file has no admin tools and its content is scrambled. Upload it to your host; participants open the plain link.`;
-  $("exportGame").disabled = !canExport;
+    : problems.length
+      ? `Fix ${problems.length === 1 ? "this" : "these"} before exporting:\n${problems.map(p => "• " + p).join("\n")}`
+      : `${game.locations.length} locations${moved ? `, ${moved} moved from the default` : ""} · ${challenges} challenges. ` +
+        `The file has no admin tools and its content is scrambled. Upload it to your host; participants open the plain link.`;
+  $("exportInfo").classList.toggle("bad", canExport && problems.length > 0);
+  $("draftInfo").textContent = draft.error || "Your changes are saved in this browser as you go.";
+  $("draftInfo").classList.toggle("bad", !!draft.error);
+  $("exportGame").disabled = !canExport || problems.length > 0;
 }
 $("exportGame").onclick = () => {
+  if (Play.validateGame(gameForExport()).length) return;
   downloadFile(new File([participantHtml()], "chinatown-hunt.html", { type:"text/html" }));
+};
+
+// Load a previously exported game file back in as the draft: the way to move work between computers
+// or recover it after browser data was cleared.
+$("importGame").onchange = async e => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  let game;
+  try {
+    const m = /Pack\.open\("(cth1\.[A-Za-z0-9+/=]+\.[A-Za-z0-9+/=]+)"\)/.exec(await file.text());
+    if (!m) throw new Error("it isn't an exported game file");
+    game = Pack.open(m[1]);
+    if (game.id !== GAME.id || !Array.isArray(game.locations)) throw new Error("it is a different game");
+  } catch(err){ alert(`Couldn't import ${file.name}: ${err.message}.`); return; }
+  if (!confirm(`Replace the game you're building here with the one in ${file.name}?`)) return;
+  try { store.setItem(DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), game })); }
+  catch(err){ alert("Couldn't save the imported game in this browser (storage full?)."); return; }
+  location.reload();
+};
+$("resetDraft").onclick = () => {
+  if (!confirm("Throw away all your changes (locations, text and challenges) and start again from the default game? Export first if you might want them.")) return;
+  store.removeItem(DRAFT_KEY); store.removeItem(POI_KEY);
+  location.reload();
+};
+
+/* ════════════════════════════════════════════════════════════════════
+   CHALLENGES — the arrival text and the ordered challenges for the
+   selected location. Add, edit, reorder (↑ ↓) and delete; each challenge
+   is checked with Play.validateTask before it can be saved.
+   ════════════════════════════════════════════════════════════════════ */
+const TYPE_LABELS = { multiple_choice: "Multiple choice", text: "Typed answer", number: "Number" };
+let editing = null;       // { locId, index } of the challenge in the form; index -1 for a new one
+
+const selectedLocation = () => GAME.locations.find(l => l.id === capSel.value);
+
+function renderTasks(){
+  const l = selectedLocation(); if (!l) return;
+  const arrival = $("arrivalEdit");
+  if (document.activeElement !== arrival) arrival.value = l.arrivalText || "";
+  const tasks = l.tasks || [];
+  $("taskCount").textContent = tasks.length ? `${tasks.length} challenge${tasks.length === 1 ? "" : "s"}, played in this order` : "No challenges yet";
+  $("taskList").replaceChildren(...tasks.map((t, i) => {
+    const problems = Play.validateTask(t);
+    const li = document.createElement("li");
+    li.dataset.id = t.id;
+    li.className = problems.length ? "bad" : "";
+    li.innerHTML = `<div class="tsum"><span class="tnum"></span><span class="ttype"></span><span class="tpts"></span></div><div class="tprompt"></div><div class="tprob"></div>
+      <div class="tbtns"><button class="btn tup" title="Move up">↑</button><button class="btn tdown" title="Move down">↓</button><button class="btn tedit">Edit</button><button class="btn warn tdel">Delete</button></div>`;
+    li.querySelector(".tnum").textContent = i + 1;
+    li.querySelector(".ttype").textContent = TYPE_LABELS[t.type] || t.type;
+    li.querySelector(".tpts").textContent = `${Play.pointsFor(t)} pts`;
+    li.querySelector(".tprompt").textContent = t.prompt || "(no question yet)";
+    li.querySelector(".tprob").textContent = problems.join(" · ");
+    li.querySelector(".tup").disabled = i === 0;
+    li.querySelector(".tdown").disabled = i === tasks.length - 1;
+    li.querySelector(".tup").onclick = () => moveTask(l, i, -1);
+    li.querySelector(".tdown").onclick = () => moveTask(l, i, +1);
+    li.querySelector(".tedit").onclick = () => openTaskForm(l, i);
+    li.querySelector(".tdel").onclick = () => deleteTask(l, i);
+    return li;
+  }));
+  if (editing && editing.locId !== l.id) closeTaskForm();
+}
+
+$("arrivalEdit").addEventListener("input", e => {
+  const l = selectedLocation(); if (!l) return;
+  l.arrivalText = e.target.value;
+  saveDraft();
+});
+
+function moveTask(l, i, dir){
+  const j = i + dir, tasks = l.tasks;
+  if (j < 0 || j >= tasks.length) return;
+  [tasks[i], tasks[j]] = [tasks[j], tasks[i]];
+  if (editing?.locId === l.id) closeTaskForm();
+  saveDraft(); renderTasks();
+}
+function deleteTask(l, i){
+  if (!confirm(`Delete challenge ${i + 1} at ${l.name}? Teams who already answered it keep their points.`)) return;
+  l.tasks.splice(i, 1);
+  if (editing?.locId === l.id) closeTaskForm();
+  saveDraft(); renderTasks();
+}
+
+// The form works on a copy; nothing changes until Save succeeds.
+function openTaskForm(l, index){
+  const t = index >= 0 ? structuredClone(l.tasks[index])
+    : { type:"multiple_choice", prompt:"", options:["", ""], answer:null, points:Play.DEFAULT_POINTS, hint:"", hintPenalty:Play.DEFAULT_HINT_PENALTY };
+  editing = { locId: l.id, index };
+  $("tfTitle").textContent = index >= 0 ? `Edit challenge ${index + 1}` : "New challenge";
+  $("tfType").value = t.type;
+  $("tfPrompt").value = t.prompt || "";
+  renderOptions(t.type === "multiple_choice" ? (t.options || []) : ["", ""], t.type === "multiple_choice" ? t.answer : null);
+  $("tfAccept").value = (t.accept || []).join("\n");
+  $("tfAnswer").value = t.type === "number" && t.answer != null ? t.answer : "";
+  $("tfTolerance").value = t.type === "number" && t.tolerance ? t.tolerance : "";
+  $("tfPoints").value = Play.pointsFor(t);
+  $("tfHint").value = t.hint || "";
+  $("tfHintPenalty").value = Play.hintPenaltyFor(t);
+  $("tfErrors").textContent = "";
+  showTypeFields();
+  $("taskForm").hidden = false; $("taskAdd").hidden = true;
+  $("tfPrompt").focus();
+}
+function closeTaskForm(){
+  editing = null;
+  $("taskForm").hidden = true; $("taskAdd").hidden = false;
+}
+function showTypeFields(){
+  const type = $("tfType").value;
+  $("tfMC").hidden = type !== "multiple_choice";
+  $("tfText").hidden = type !== "text";
+  $("tfNumber").hidden = type !== "number";
+}
+function renderOptions(options, correct){
+  $("tfOptions").replaceChildren(...options.map((o, i) => {
+    const row = document.createElement("div");
+    row.className = "optrow";
+    row.innerHTML = `<input type="radio" name="tfCorrect" title="Correct answer"><input type="text" class="tfOpt" placeholder="Option ${i + 1}"><button class="btn tfDel" title="Remove option">✕</button>`;
+    row.querySelector("[type=radio]").checked = i === correct;
+    row.querySelector(".tfOpt").value = o;
+    row.querySelector(".tfDel").onclick = () => {
+      const { options, correct } = readOptions();
+      options.splice(i, 1);
+      renderOptions(options, correct === i ? null : correct > i ? correct - 1 : correct);
+    };
+    return row;
+  }));
+}
+function readOptions(){
+  const rows = [...$("tfOptions").querySelectorAll(".optrow")];
+  return { options: rows.map(r => r.querySelector(".tfOpt").value), correct: rows.findIndex(r => r.querySelector("[type=radio]").checked) };
+}
+function readTaskForm(){
+  const type = $("tfType").value;
+  const num = (v, fallback) => v.trim() === "" ? fallback : Number(v);
+  const t = { type, prompt: $("tfPrompt").value.trim(), points: num($("tfPoints").value, Play.DEFAULT_POINTS) };
+  if (type === "multiple_choice") {
+    const { options, correct } = readOptions();
+    t.options = options.map(o => o.trim());
+    t.answer = correct >= 0 ? correct : null;
+  } else if (type === "text") {
+    t.accept = $("tfAccept").value.split("\n").map(a => a.trim()).filter(Boolean);
+  } else {
+    t.answer = $("tfAnswer").value.trim() === "" ? null : Play.parseNumber($("tfAnswer").value);
+    t.tolerance = num($("tfTolerance").value, 0);
+  }
+  const hint = $("tfHint").value.trim();
+  if (hint) { t.hint = hint; t.hintPenalty = num($("tfHintPenalty").value, Play.DEFAULT_HINT_PENALTY); }
+  return t;
+}
+
+$("taskAdd").onclick = () => { const l = selectedLocation(); if (l) openTaskForm(l, -1); };
+$("tfType").onchange = showTypeFields;
+$("tfAddOption").onclick = () => { const { options, correct } = readOptions(); renderOptions([...options, ""], correct); };
+$("tfCancel").onclick = closeTaskForm;
+$("tfSave").onclick = () => {
+  const l = GAME.locations.find(x => x.id === editing?.locId); if (!l) return;
+  const t = readTaskForm();
+  const problems = Play.validateTask(t);
+  if (problems.length) { $("tfErrors").textContent = "Can't save yet: " + problems.join(" · "); return; }
+  l.tasks = l.tasks || [];
+  if (editing.index >= 0) l.tasks[editing.index] = { id: l.tasks[editing.index].id, ...t };
+  else l.tasks.push({ id: Play.newTaskId(GAME), ...t });
+  closeTaskForm(); saveDraft(); renderTasks();
 };
 
 /* ════════════════════════════════════════════════════════════════════
@@ -524,7 +738,7 @@ $("replayFile").onchange = async e => {
 function playReplay(){
   if (!replay.fixes.length) return;
   if (replay.i === 0) {
-    const progress = state.opened.length || Object.values(state.streaks).some(Boolean);
+    const progress = state.progress.active || state.progress.completed.length || Object.values(state.streaks).some(Boolean);
     if (progress && !confirm("Replay from a clean slate? This clears opened locations and streaks on this device.")) return;
     clearProgress();
   }
@@ -568,13 +782,10 @@ slider("replaySpeed", v => (SPEEDS[+v] || 1) + "×", () => render());
 
 // Clears opened locations, streaks and override timers, on screen and in storage.
 function clearProgress(){
-  Object.assign(state, { opened:[], streaks:{}, nearSince:{}, overrideReady:[] });
-  GAME.locations.forEach(l => {
-    pins[l.id]?.getElement()?.querySelector(".pin")?.classList.remove("reached");
-    styleRing(l.id);
-  });
-  $("sheet").classList.remove("up");
-  save(); render();
+  Object.assign(state, { progress: Play.emptyProgress(), streaks:{}, nearSince:{}, overrideReady:[] });
+  ui.feedback = null; ui.choice = null;
+  GAME.locations.forEach(l => styleLocation(l.id));
+  save(); renderSheet(); render();
 }
 
 /* ════════════════════════════════════════════════════════════════════

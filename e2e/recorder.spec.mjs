@@ -22,6 +22,14 @@ async function setSpeed(page, index) {
   await page.locator("#replaySpeed").evaluate((el, v) => { el.value = String(v); el.dispatchEvent(new Event("input", { bubbles: true })); }, index);
 }
 
+// The admin "Finish location" shortcut: answer everything left at the open location and close it.
+async function finishLocation(app, page) {
+  await app.openTools();
+  await page.locator("#solveAll").click();
+  await expect(page.locator("#sheet")).not.toHaveClass(/\bup\b/);
+  await app.closeTools();
+}
+
 // Record a real-GPS walk that opens one location: 1 start fix, 3 approach fixes, 3 inside.
 async function recordArrival(app, page) {
   await app.open();
@@ -30,8 +38,8 @@ async function recordArrival(app, page) {
   await app.startGps(far(locs));
   for (const p of approach) await app.fix(p);
   for (let i = 0; i < 3; i++) await app.fix(offset(loc, 1, i * 120));
-  await expect(app.reached()).toHaveText("1");
-  await page.locator("#sheetclose").click();           // back to the map, as a walker would
+  await expect(app.opened()).toHaveCount(1);
+  await finishLocation(app, page);                      // answer its challenges and head back to the map
   return { locs, loc };
 }
 
@@ -95,14 +103,14 @@ test("a downloaded walk replays in-app and reopens the same location", async ({ 
 
   await expect(page.locator("#replayStatus")).toContainText("finished");
   await closeDrawer(page);
-  await expect(app.reached()).toHaveText("1");
-  await expect(app.pin(loc.id)).toHaveClass(/\breached\b/);
+  await expect(app.opened()).toHaveCount(1);
+  await expect(app.pin(loc.id)).toHaveClass(/\bactive\b/);
   await expect(page.locator("#sheetname")).toHaveText(loc.name);
   await expect(page.locator("#srctxt")).toHaveText("replay 120×");
   await expect(page.locator("#fixcount")).toHaveText("14");
 
   // Replayed fixes are not added to the recording.
-  await page.locator("#sheetclose").click();
+  await finishLocation(app, page);
   await openDrawer(page);
   await expect(page.locator("#walkStatus")).toContainText("7 fixes recorded");
 });
@@ -126,7 +134,7 @@ test("replay keeps recorded time: a 95-second loiter makes the override availabl
   await closeDrawer(page);
 
   await expect(page.locator("#override")).toBeVisible();
-  await expect(app.reached()).toHaveText("0");
+  await expect(app.opened()).toHaveCount(0);
   expect(Date.now() - started, "95 s of recorded time should replay in a few real seconds").toBeLessThan(10_000);
 
   await page.locator("#override").click();

@@ -36,21 +36,21 @@ function page(admin, modules) {
 }
 
 // Participant page: the game only, with its content left as a slot for a sealed pack.
-const template = page(false, [inline("engine.js"), inline("pack.js"), 'const GAME = Pack.open("__GAME_PACK__");', inline("app.js")]);
+const template = page(false, [inline("engine.js"), inline("play.js"), inline("pack.js"), 'const GAME = Pack.open("__GAME_PACK__");', inline("app.js")]);
 for (const admin of ['id="drawer"', 'id="devbtn"', "setPoi", "Walk.record", "__PARTICIPANT_TEMPLATE__"])
   if (template.includes(admin)) throw new Error(`build: admin code leaked into the participant file (${admin})`);
 
 // Admin page: everything, plus the participant page embedded so Export can produce it.
 const templateLiteral = JSON.stringify(template).replace(/</g, "\\u003c");
 const adminPage = page(true, [
-  inline("engine.js"), inline("session.js"), inline("poi.js"), inline("pack.js"), inline("game.js"), inline("app.js"),
+  inline("engine.js"), inline("play.js"), inline("session.js"), inline("poi.js"), inline("pack.js"), inline("game.js"), inline("app.js"),
   swap(inline("admin.js"), '"__PARTICIPANT_TEMPLATE__"', templateLiteral, "participant template slot in admin.js"),
 ]);
 
 // A playable participant file with the default game, as a sanity check and for CI.
 const playable = swap(template, '"__GAME_PACK__"', JSON.stringify(Pack.seal(GAME)), "game pack slot");
 for (const l of GAME.locations)
-  for (const text of [l.name, l.arrivalText])
+  for (const text of [l.name, l.arrivalText, ...(l.tasks || []).flatMap(t => [t.prompt, t.hint, ...(t.options || []), ...(t.accept || []).filter(a => a.length > 5)])])
     if (text && playable.includes(text)) throw new Error(`build: readable game content in the participant file ("${text.slice(0, 30)}")`);
 
 fs.mkdirSync(path.join(root, "dist"), { recursive: true });

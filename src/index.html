@@ -30,11 +30,12 @@
 <!-- admin:end -->
 
 <div id="hud">
-  <div class="to">nearest unreached</div>
+  <div class="to" id="targetLabel">nearest location</div>
   <h1 class="name" id="target">—</h1>
   <div class="dist"><span id="metres">—</span><small>m away</small></div>
   <div class="tally">
-    <span><span id="reached">0</span> of <span id="total">8</span> reached</span>
+    <span><span id="reached">0</span> of <span id="total">8</span> done</span>
+    <span><span id="score">0</span> points</span>
     <span id="clock">2:00:00</span>
   </div>
   <button id="override">I'm standing right here — open it</button>
@@ -48,9 +49,7 @@
   <div class="rule"></div>
   <div class="place" id="sheetplace"></div>
   <h2 id="sheetname"></h2>
-  <p id="sheettext"></p>
-  <div class="stub">Tasks for this location arrive in Milestone 2. This rig proves arrival detection only.</div>
-  <button id="sheetclose">Back to the map</button>
+  <div id="stage"></div>
 </div>
 
 <div id="start" hidden>
@@ -71,6 +70,12 @@
     <h4>Export game file</h4>
     <div class="note" id="exportInfo"></div>
     <div class="row"><button class="btn primary" id="exportGame">Export game file</button></div>
+    <div class="note" id="draftInfo"></div>
+    <div class="row">
+      <label class="btn" for="importGame">Import game file…</label>
+      <input type="file" id="importGame" accept=".html,text/html" hidden>
+      <button class="btn warn" id="resetDraft">Start over</button>
+    </div>
   </div>
 
   <div class="grp">
@@ -88,11 +93,49 @@
     </div>
     <label class="fld"><span>Radius</span><input type="range" id="capRad" min="5" max="80" step="1" value="25"><output id="capRadO">25 m</output></label>
     <div class="row">
-      <button class="btn" id="capExport">Copy JSON</button>
-      <button class="btn" id="poiDownload">Download JSON</button>
-      <button class="btn warn" id="poiRevert">Revert</button>
+      <button class="btn warn" id="poiRevert">Revert position</button>
     </div>
-    <textarea id="capOut" readonly placeholder="Copy JSON puts the locations here, ready to paste over GAME.locations."></textarea>
+
+    <h5>Arrival text</h5>
+    <textarea id="arrivalEdit" class="prose" rows="3" placeholder="Shown when the team arrives, before the first challenge."></textarea>
+
+    <h5>Challenges <span class="note inline" id="taskCount"></span></h5>
+    <ol id="taskList" class="tasklist"></ol>
+    <div class="row"><button class="btn" id="taskAdd">Add challenge</button></div>
+
+    <div id="taskForm" class="taskform" hidden>
+      <h5 id="tfTitle">New challenge</h5>
+      <label class="stack">Type
+        <select id="tfType"><option value="multiple_choice">Multiple choice</option><option value="text">Typed answer</option><option value="number">Number</option></select></label>
+      <label class="stack">Question <textarea id="tfPrompt" class="prose" rows="2"></textarea></label>
+      <div id="tfMC">
+        <div class="stack">Options <span class="note inline">select the correct one</span></div>
+        <div id="tfOptions"></div>
+        <div class="row"><button class="btn" id="tfAddOption">Add option</button></div>
+      </div>
+      <label class="stack" id="tfText">Accepted answers, one per line <span class="note inline">case, spacing and punctuation don't matter</span>
+        <textarea id="tfAccept" class="prose" rows="3"></textarea></label>
+      <div class="pair" id="tfNumber">
+        <label class="stack">Answer <input type="text" id="tfAnswer" inputmode="decimal"></label>
+        <label class="stack">Allow ± <input type="text" id="tfTolerance" inputmode="decimal" placeholder="0"></label>
+      </div>
+      <div class="pair">
+        <label class="stack">Points <input type="number" id="tfPoints" min="0" step="5"></label>
+        <label class="stack">Hint costs <input type="number" id="tfHintPenalty" min="0" step="5"></label>
+      </div>
+      <label class="stack">Hint <span class="note inline">optional</span> <textarea id="tfHint" class="prose" rows="2"></textarea></label>
+      <div class="note bad" id="tfErrors"></div>
+      <div class="row"><button class="btn primary" id="tfSave">Save challenge</button><button class="btn" id="tfCancel">Cancel</button></div>
+    </div>
+
+    <details class="more">
+      <summary>Locations as JSON</summary>
+      <div class="row">
+        <button class="btn" id="capExport">Copy JSON</button>
+        <button class="btn" id="poiDownload">Download JSON</button>
+      </div>
+      <textarea id="capOut" readonly placeholder="Copy JSON puts the locations here."></textarea>
+    </details>
   </div>
 
   <div class="grp">
@@ -173,7 +216,8 @@
     <div id="state"></div>
     <div class="row" style="margin-top:11px">
       <button class="btn" id="forceOpen">Open nearest</button>
-      <button class="btn" id="openAll">Open all</button>
+      <button class="btn" id="solveOne">Answer correctly</button>
+      <button class="btn" id="solveAll">Finish location</button>
       <button class="btn warn" id="reset">Reset progress</button>
     </div>
     <label class="fld" style="margin-top:11px"><span>Clock</span><input type="range" id="clockSet" min="0" max="120" step="1" value="120"><output id="clockSetO">120 min</output></label>

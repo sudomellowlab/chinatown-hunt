@@ -12,19 +12,19 @@ test("a scripted approach opens the location only after the debounce", async ({ 
 
   await app.startGps(far(locs));
   for (const p of approach) await app.fix(p);
-  await expect(app.reached()).toHaveText("0");
+  await expect(app.opened()).toHaveCount(0);
 
   // consecutiveFixes is 3: inside twice is not enough…
   await app.fix(loc);
   await app.fix(offset(loc, 2, 45));
-  await expect(app.reached()).toHaveText("0");
+  await expect(app.opened()).toHaveCount(0);
   await expect(app.sheet()).not.toHaveClass(/\bup\b/);
-  await expect(app.pin(loc.id)).not.toHaveClass(/\breached\b/);
+  await expect(app.pin(loc.id)).not.toHaveClass(/\b(active|reached)\b/);
 
   // …the third opens it.
   await app.fix(offset(loc, 2, 225));
-  await expect(app.reached()).toHaveText("1");
-  await expect(app.pin(loc.id)).toHaveClass(/\breached\b/);
+  await expect(app.opened()).toHaveCount(1);
+  await expect(app.pin(loc.id)).toHaveClass(/\bactive\b/);
 });
 
 test("fixes with accuracy above the ceiling open nothing", async ({ app, page }) => {
@@ -34,7 +34,7 @@ test("fixes with accuracy above the ceiling open nothing", async ({ app, page })
 
   await app.startGps(far(locs));
   for (let i = 0; i < 5; i++) await app.fix(loc, CEILING + 30);
-  await expect(app.reached()).toHaveText("0");
+  await expect(app.opened()).toHaveCount(0);
   await expect(app.sheet()).not.toHaveClass(/\bup\b/);
 
   // The rejections are visible in the fix log, with the reason.
@@ -46,9 +46,9 @@ test("fixes with accuracy above the ceiling open nothing", async ({ app, page })
   // Accuracy exactly at the ceiling is accepted — and the rejected fixes didn't count toward the streak.
   await app.fix(loc, CEILING);
   await app.fix(loc, CEILING);
-  await expect(app.reached()).toHaveText("0");
+  await expect(app.opened()).toHaveCount(0);
   await app.fix(loc, CEILING);
-  await expect(app.reached()).toHaveText("1");
+  await expect(app.opened()).toHaveCount(1);
 });
 
 test("arrival shows the sheet with the right location name", async ({ app }) => {
@@ -72,16 +72,16 @@ test("progress survives a page reload", async ({ app, page }) => {
 
   await app.startGps(approach[0]);
   for (let i = 0; i < 3; i++) await app.fix(loc);
-  await expect(app.reached()).toHaveText("1");
+  await expect(app.opened()).toHaveCount(1);
 
   await page.reload();
   await expect(page.locator(".pin")).toHaveCount(8);
-  await expect(app.reached()).toHaveText("1");
-  await expect(app.pin(loc.id)).toHaveClass(/\breached\b/);
-  await expect(page.locator(".pin.reached")).toHaveCount(1);
-  await expect(app.sheet()).not.toHaveClass(/\bup\b/);
-  // With no position yet after the reload, the HUD must not claim everything is done.
-  await expect(page.locator("#target")).toHaveText("—");
+  await expect(app.opened()).toHaveCount(1);
+  await expect(app.pin(loc.id)).toHaveClass(/\bactive\b/);
+  // Mid-location, a reload goes straight back to that location.
+  await expect(app.sheet()).toHaveClass(/\bup\b/);
+  await expect(page.locator("#sheetname")).toHaveText(loc.name);
+  await expect(page.locator("#target")).toHaveText(loc.name);
 });
 
 test("the manual override appears after 90s within 60m, and not before", async ({ app, page }) => {
@@ -106,12 +106,12 @@ test("the manual override appears after 90s within 60m, and not before", async (
   await page.clock.fastForward(2_000);
   await app.fix(at);                              // t = 91 s
   await expect(override).toBeVisible();
-  await expect(app.reached()).toHaveText("0");    // still not opened by the engine
+  await expect(app.opened()).toHaveCount(0);    // still not opened by the engine
 
   await override.click();
   await expect(app.sheet()).toHaveClass(/\bup\b/);
   await expect(page.locator("#sheetname")).toHaveText(loc.name);
-  await expect(app.reached()).toHaveText("1");
+  await expect(app.opened()).toHaveCount(1);
 });
 
 /* ── regressions: GPS error handling, settings from GAME ────────────────── */
@@ -150,7 +150,7 @@ test("engine settings come from GAME.defaults, not the drawer's slider positions
 
   await app.startGps(far(locs));
   for (let i = 0; i < 3; i++) await app.fix(loc, 30);          // fine under 50 m, rejected under 20 m
-  await expect(app.reached()).toHaveText("0");
+  await expect(app.opened()).toHaveCount(0);
 
   await app.openTools();
   await expect(page.locator("#ceilO")).toHaveText("20 m");

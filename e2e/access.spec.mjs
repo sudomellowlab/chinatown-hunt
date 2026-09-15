@@ -55,13 +55,17 @@ test("a participant who reloads sees Continue and keeps their progress", async (
   const loc = GAME.locations[0];
   await app.begin(far(GAME.locations));
   for (let i = 0; i < 3; i++) await app.fix(offset(loc, 1, i * 120));
-  await expect(page.locator("#reached")).toHaveText("1");
+  await expect(page.locator("#sheetname")).toHaveText(loc.name);
+  await page.locator("#stageBtn").click();                        // start the challenges
+  await page.locator(".opt").nth(loc.tasks[0].answer).click();
+  await page.locator("#stageBtn").click();                        // submit
+  await expect(page.locator("#score")).toHaveText(String(loc.tasks[0].points));
 
   await page.reload();
   await expect(page.locator("#start")).toBeVisible();
   await expect(page.locator("#startBtn")).toHaveText("Continue");
-  await expect(page.locator("#reached")).toHaveText("1");
-  await expect(page.locator(`.pin[data-id="${loc.id}"]`)).toHaveClass(/\breached\b/);
+  await expect(page.locator("#score")).toHaveText(String(loc.tasks[0].points));
+  await expect(page.locator(`.pin[data-id="${loc.id}"]`)).toHaveClass(/\bactive\b/);
   expect(await app.geoWatches(), "no location request before Continue").toBe(0);
 
   await app.begin(far(GAME.locations));

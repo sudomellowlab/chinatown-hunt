@@ -109,6 +109,7 @@ export async function createApp({ page, context }) {
       // Location data as the app sees it, via the coordinate capture tool's export.
       async locations() {
         await app.openTools();
+        await page.locator("details.more").evaluate(d => { d.open = true; });
         await page.locator("#capExport").click();
         const locs = JSON.parse(await page.locator("#capOut").inputValue());
         await app.closeTools();
@@ -134,7 +135,8 @@ export async function createApp({ page, context }) {
         await expect(page.locator("#fixcount")).toHaveText(String(++fixes));
       },
 
-      reached: () => page.locator("#reached"),
+      reached: () => page.locator("#reached"),              // locations finished
+      opened: () => page.locator(".pin.active, .pin.reached"),   // locations opened: in progress or finished
       sheet: () => page.locator("#sheet"),
       pin: id => page.locator(`.pin[data-id="${id}"]`),
       dialogs,

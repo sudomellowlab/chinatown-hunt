@@ -46,10 +46,10 @@ test("the exported file plays the game as set up in the admin panel, on a phone"
     const clearOfOthers = locs.filter(l => l.id !== THK).every(l => Engine.haversine(old.lat, old.lng, l.lat, l.lng) > l.radius + 5);
     if (clearOfOthers) {
       for (let i = 0; i < 3; i++) await player.fix(old);
-      await expect(phonePage.locator("#reached")).toHaveText("0");
+      await expect(phonePage.locator(".pin.active, .pin.reached")).toHaveCount(0);
     }
     for (let i = 0; i < 3; i++) await player.fix(offset({ lat, lng }, 30, 90));
-    await expect(phonePage.locator("#reached")).toHaveText("1");
+    await expect(phonePage.locator(".pin.active, .pin.reached")).toHaveCount(1);
     await expect(phonePage.locator("#sheetname")).toHaveText(old.name);
     done();
   } finally {
