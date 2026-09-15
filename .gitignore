@@ -23,3 +23,6 @@ $RECYCLE.BIN/
 # .claude/ is committed on purpose (shared preview config). Keep secrets out of it;
 # personal overrides go in settings.local.json, which is ignored.
 .claude/settings.local.json
+
+# Recorded walks: timestamped GPS tracks. The repo is public, so keep them out of git.
+walks/

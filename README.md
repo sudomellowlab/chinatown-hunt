@@ -19,6 +19,7 @@
    node --test          # unit tests
    node build.js        # writes dist/chinatown-hunt.html
    npx playwright test  # browser tests (already set up in a Codespace)
+   node scripts/replay.js walks/my-walk.json --sweep   # tune radius/ceiling against a recorded walk
    python3 -m http.server 8765
    ```
 

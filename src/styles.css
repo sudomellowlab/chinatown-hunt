@@ -139,3 +139,10 @@ textarea{font-family:var(--mono);font-size:11px;height:160px;line-height:1.45}
 .you.sim{background:var(--brass)}
 
 @media (prefers-reduced-motion:reduce){#sheet,#drawer{transition:none}}
+
+/* ---------- recorder + replay ---------- */
+[hidden]{display:none!important}
+.note{font-family:var(--mono);font-size:11px;line-height:1.55;color:var(--slate);white-space:pre-wrap;margin-bottom:10px}
+.note.bad{color:var(--mark)}
+label.btn{display:flex;align-items:center;justify-content:center;text-align:center}
+.btn[disabled]{opacity:.45;cursor:default}

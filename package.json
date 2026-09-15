@@ -1,6 +1,7 @@
 {
   "name": "chinatown-hunt",
   "private": true,
+  "type": "module",
   "description": "GPS treasure hunt for Telok Ayer and Ann Siang Hill. The build and unit tests need no install; npm is only for Playwright.",
   "scripts": {
     "build": "node build.js",

@@ -6,14 +6,16 @@ A GPS treasure hunt for one phone per team, walking eight locations around Telok
 
 ```
 src/engine.js        geofence engine: pure functions, ES module
+src/session.js       walk recording and walk-file format: pure, shared by the app and the CLI
 src/app.js           map (Leaflet from CDN), UI, dev drawer, GAME content at the top
 src/styles.css
 src/index.html       markup; links styles.css and app.js
 build.js             zero-dependency Node script, inlines src/ into dist/
+scripts/replay.js    CLI: replay a recorded walk through the engine, report per location, sweep parameters
 dist/chinatown-hunt.html   the deliverable (gitignored, built locally or by CI)
-test/engine.test.js  unit tests for the engine (node --test picks up everything under test/)
-e2e/geofence.spec.mjs      Playwright tests of the built file via real geolocation emulation
-playwright.config.mjs, package.json   npm is only for Playwright
+test/*.test.js       unit tests: engine, session, replay CLI (node --test picks up everything under test/)
+e2e/*.spec.mjs       Playwright tests of the built file via real geolocation emulation; shared setup in e2e/fixtures.mjs
+playwright.config.mjs, package.json   npm is only for Playwright; the package is ESM ("type": "module")
 .claude/launch.json  preview server config
 .github/workflows/ci.yml   tests, build, uploads the HTML as an artifact
 .devcontainer/, .nvmrc     Codespace setup: Node 22 + Playwright Chromium
@@ -26,6 +28,7 @@ node --test          # unit tests, no install needed
 node build.js        # writes dist/chinatown-hunt.html
 npm ci && npx playwright install chromium   # once, for browser tests
 npx playwright test  # browser tests; builds first
+node scripts/replay.js walks/x.json --radius 25 --ceiling 50 --streak 3   # replay a walk (--sweep for a grid, --help)
 python3 -m http.server 8765 --bind 127.0.0.1   # preview: /src/index.html?dev=1 or /dist/chinatown-hunt.html?dev=1
 ```
 
@@ -39,10 +42,13 @@ Browser tests read location coordinates from the page and pick test positions ge
 - **Every fix enters through one function** (`onFix` → `Engine.ingest`), whether it's real, simulated or replayed. Nothing branches on a fix's source; if it did, the tests and emulator would stop proving anything about live behaviour.
 - **A rejected fix leaves streaks untouched.** It doesn't reset them. One bad reading must never undo progress from good ones, and tests fail if this is "fixed".
 - **Opened locations never re-lock**, however far the walker goes afterwards.
+- **Replayed fixes aren't recorded.** The recorder skips `source === "replay"`, so exporting after a replay doesn't duplicate the walk. This is recorder bookkeeping, not engine logic; the engine never sees `source`.
 - **The manual-override dwell timer uses each fix's `t`, never the wall clock**, so replays at any speed reach the same verdict as a live walk. Rejected fixes neither start nor clear a timer.
 - **The built artifact stays a single self-contained file.** No bundler, no framework, no npm install needed to produce it.
+
+Walk files hold timestamped GPS tracks and the repo is public, so `walks/` is gitignored.
 
 ## Docs
 
 - `SPEC.md`: the full product brief (game content shape, engine rules, screens, dev mode, design). Its "single HTML file, no build step" constraint has been relaxed to the `src/` + `build.js` layout above.
-- `HANDOFF.md`: the current order of work, which overrides SPEC.md's build order. Steps 1–3 (modules, engine tests, Playwright) are done; next is Step 4 (fix recorder and replay), then Milestone 2. Stop for review after each step, and commit at each step.
+- `HANDOFF.md`: the current order of work, which overrides SPEC.md's build order. Steps 1–4 (modules, engine tests, Playwright, recorder and replay) are done; next is Milestone 2. Stop for review after each step, and commit at each step.
