@@ -13,6 +13,8 @@ build.js             zero-dependency Node script, inlines src/ into dist/
 dist/chinatown-hunt.html   the deliverable (gitignored, built locally or by CI)
 test/engine.test.js  unit tests for the engine
 .claude/launch.json  preview server config
+.github/workflows/ci.yml   tests, build, uploads the HTML as an artifact
+.devcontainer/, .nvmrc     Codespace setup: Node 22 + Playwright Chromium
 ```
 
 ## Commands
