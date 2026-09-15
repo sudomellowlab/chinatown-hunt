@@ -3,6 +3,11 @@
   // Node 22 on Debian 12, matching .nvmrc and CI. Includes git and python3 (for the preview server).
   "image": "mcr.microsoft.com/devcontainers/javascript-node:5-22-bookworm",
 
+  // Claude Code CLI (and its VS Code extension). Run `claude` in the terminal; sign in once per Codespace.
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+
   // Tests and build need only Node. This installs Playwright's Chromium and its system
   // libraries up front so Step 3's browser tests run in a cold Codespace.
   // Until Step 3 adds package.json, Playwright is pinned here; afterwards npm ci installs
