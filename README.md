@@ -10,9 +10,10 @@
 
 **Want to change it?** Open a Codespace:
 
-1. On the repo page, click **Code → Codespaces → Create codespace on main**.
-2. Wait for setup to finish. It installs Node 22 and Playwright's Chromium, with nothing to do on your part.
-3. In the Codespace terminal:
+1. On the repo page, click **Code → Codespaces → Create codespace on main**. To reopen one you've already made, go to **github.com/codespaces**.
+2. Wait for setup to finish. It installs Node 22, Playwright's Chromium and Claude Code, with nothing to do on your part.
+3. To work with Claude Code, run `claude` in the Codespace terminal and sign in. You stay signed in when the Codespace stops and resumes; a new Codespace asks again.
+4. In the Codespace terminal:
 
    ```bash
    node --test          # unit tests
