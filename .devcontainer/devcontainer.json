@@ -4,8 +4,10 @@
   "image": "mcr.microsoft.com/devcontainers/javascript-node:5-22-bookworm",
 
   // Claude Code CLI (and its VS Code extension). Run `claude` in the terminal; sign in once per Codespace.
+  // sshd lets `gh codespace ssh` reach the Codespace from any terminal, through GitHub's authenticated tunnel.
   "features": {
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
+    "ghcr.io/devcontainers/features/sshd:1": {}
   },
 
   // Tests and build need only Node. This installs Playwright's Chromium and its system
