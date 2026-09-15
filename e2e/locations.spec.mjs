@@ -1,4 +1,5 @@
-// Setting locations (POIs) by hand in the dev drawer, against the built file.
+// Setting locations (POIs) by hand, against the built file. Admin work: runs in the
+// "desktop" project (1440×900), where the panel docks beside the map.
 import { test, expect, offset, far } from "./fixtures.mjs";
 import { Engine } from "../src/engine.js";
 
@@ -8,10 +9,16 @@ const CLUB = "club-street";
 const openDrawer  = page => page.locator("#devbtn").click();
 const closeDrawer = page => page.locator("#drawerclose").click();
 const select = (page, id) => page.locator("#capTarget").selectOption(id);
-// Start placing and wait for the drawer to finish sliding away, as a person would before tapping the map.
+// Start placing and wait for the map to finish zooming to the pin, as a person would before clicking.
 async function startPlacing(page) {
   await page.locator("#poiPlace").click();
-  await expect(page.locator("#drawer")).not.toBeInViewport();
+  await expect(page.locator("#poibar")).toBeVisible();
+  await expect(page.locator(".leaflet-zoom-anim")).toHaveCount(0);
+}
+// Centre of the visible map, in page pixels.
+async function mapCentre(page) {
+  const b = await page.locator("#map").boundingBox();
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 }
 
 // The app's own export of its locations (drawer must be open).
@@ -33,7 +40,7 @@ async function pasteCoords(page, text) {
   await page.locator("#poiApply").click();
 }
 
-test("a location placed by tapping the map opens there, and no longer at its old spot", async ({ app, page }) => {
+test("a location placed by clicking the map opens there, and no longer at its old spot", async ({ app, page }) => {
   await app.open();
   await openDrawer(page);
   const before = await exported(page);
@@ -44,18 +51,18 @@ test("a location placed by tapping the map opens there, and no longer at its old
   await expect(page.locator("#poibar")).toBeVisible();
   await expect(page.locator("#poibarText")).toHaveText(`Placing ${old.name} · radius ${old.radius} m`);
 
-  // The map centres on the pin at zoom 18 (~0.6 m per pixel). Tap 150 px away in a
+  // The map centres on the pin at zoom 18 (~0.6 m per pixel). Click 150 px away in a
   // direction that lands clear of the other geofences.
-  const { width, height } = page.viewportSize();
+  const c = await mapCentre(page);
   let placed;
   for (const [dx, dy] of [[-150, 0], [0, -150], [150, 0], [0, 150]]) {
-    await page.mouse.click(width / 2 + dx, height / 2 + dy);
+    await page.mouse.click(c.x + dx, c.y + dy);
     await page.locator("#poiDone").click();
     placed = find(await exported(page), THK);
     if (clearOfOthers(placed, before, THK, 10)) break;
     await startPlacing(page);
   }
-  expect(metres(old, placed), "tap 150 px from the pin at zoom 18").toBeGreaterThan(80);
+  expect(metres(old, placed), "click 150 px from the pin at zoom 18").toBeGreaterThan(80);
   expect(metres(old, placed)).toBeLessThan(100);
   await expect(page.locator("#poiInfo")).toContainText("edited on this device");
   await expect(page.locator("#poibar")).toBeHidden();
@@ -185,4 +192,52 @@ test("text that isn't coordinates is refused with a message", async ({ app, page
   app.expectDialog("Couldn't read those coordinates: expected decimal coordinates like 1.28092, 103.84760.");
   await pasteCoords(page, "Thian Hock Keng");
   expect(await exported(page)).toEqual(before);
+});
+
+test("on a computer the panel sits beside the map and placing never hides it", async ({ app, page }) => {
+  await app.open();
+  await openDrawer(page);
+  await expect(page.locator("#drawer")).toBeInViewport({ ratio: 1 });        // finished sliding in
+  const map = await page.locator("#map").boundingBox(), panel = await page.locator("#drawer").boundingBox();
+  const vw = page.viewportSize().width;
+  expect(panel.x + panel.width).toBeCloseTo(vw, 0);
+  expect(map.x + map.width, "map ends where the panel starts").toBeLessThanOrEqual(panel.x + 1);
+  expect(map.width).toBeGreaterThan(900);
+  await expect(page.locator("#hud")).toBeInViewport();
+  await expect(page.locator("#devbtn")).toBeHidden();
+
+  // Actions that need the map leave the panel open.
+  await select(page, THK);
+  await startPlacing(page);
+  await expect(page.locator("#drawer")).toBeInViewport();
+  const poibar = await page.locator("#poibar").boundingBox();
+  expect(poibar.x + poibar.width, "the placing bar sits over the map, not the panel").toBeLessThanOrEqual(panel.x);
+
+  // Esc finishes placing; the panel is still there.
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#poibar")).toBeHidden();
+  await expect(page.locator("#drawer")).toBeInViewport();
+
+  await page.locator("#jump").selectOption(CLUB);
+  await expect(page.locator("#drawer")).toBeInViewport();
+
+  // Closing the panel gives the map the whole window back.
+  await closeDrawer(page);
+  await expect.poll(async () => (await page.locator("#map").boundingBox()).width).toBeCloseTo(vw, 0);
+});
+
+test("clicking a pin selects it, and Enter applies pasted coordinates", async ({ app, page }) => {
+  await app.open();
+  await openDrawer(page);
+  await select(page, CLUB);
+  await expect(page.locator(".leaflet-zoom-anim")).toHaveCount(0);
+
+  await page.locator(`.pin[data-id="${THK}"]`).click();
+  await expect(page.locator("#capTarget")).toHaveValue(THK);
+  await expect(page.locator("#poiInfo")).toContainText("radius 22 m");
+
+  await page.locator("#poiCoords").fill("1.281111, 103.847777");
+  await page.locator("#poiCoords").press("Enter");
+  expect(find(await exported(page), THK)).toMatchObject({ lat: 1.281111, lng: 103.847777 });
+  await expect(page.locator("#poiCoords")).toHaveValue("");
 });

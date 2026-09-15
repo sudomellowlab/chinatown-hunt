@@ -368,14 +368,29 @@ map.on("click", e => {
    DRAWER WIRING
    ════════════════════════════════════════════════════════════════════ */
 let drawerOpen = false;
+/* On a computer screen the drawer is a panel docked beside the map, so admin work
+   (placing locations, replay, exports) never hides the map. On a phone it is a
+   full-screen sheet that gets out of the way whenever the map is needed. */
+const wideScreen = matchMedia("(min-width: 960px)");
 function toggleDrawer(open){
   drawerOpen = open;
   $("drawer").classList.toggle("up", open);
   document.body.classList.toggle("dev", open || devFlag);
+  layoutPanel();
   if (open){ renderLog(); renderWalk(); renderReplay(); render(); }
 }
+function layoutPanel(){
+  document.body.classList.toggle("panel", drawerOpen && wideScreen.matches);
+  map.invalidateSize();
+}
+wideScreen.addEventListener("change", layoutPanel);
+// After a drawer action that needs the map: close the sheet on a phone, stay open beside the map on a computer.
+function makeRoomForMap(){ if (!wideScreen.matches) toggleDrawer(false); }
 $("devbtn").onclick = () => toggleDrawer(true);
 $("drawerclose").onclick = () => toggleDrawer(false);
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && poiMode) { e.preventDefault(); $("poiDone").click(); }
+});
 
 const devFlag = new URLSearchParams(location.search).get("dev") === "1";
 if (devFlag) document.body.classList.add("dev");
@@ -389,8 +404,8 @@ function setSrcButtons(){
   $("poiPlace").classList.toggle("on", poiMode);
 }
 $("srcReal").onclick = startReal;
-$("srcSim").onclick = () => { const c = map.getCenter(); setSim(sim.at?.lat ?? c.lat, sim.at?.lng ?? c.lng); toggleDrawer(false); };
-$("tapMode").onclick = () => { tapMode = !tapMode; if (tapMode) { pathMode = false; endPlacing(); } setSrcButtons(); if (tapMode) toggleDrawer(false); };
+$("srcSim").onclick = () => { const c = map.getCenter(); setSim(sim.at?.lat ?? c.lat, sim.at?.lng ?? c.lng); makeRoomForMap(); };
+$("tapMode").onclick = () => { tapMode = !tapMode; if (tapMode) { pathMode = false; endPlacing(); } setSrcButtons(); if (tapMode) makeRoomForMap(); };
 $("freeze").onclick = () => { frozen = !frozen; setSrcButtons(); render(); };
 
 /* jump controls */
@@ -405,18 +420,18 @@ function jumpTo(id, offsetM){
   setSim(l.lat + d, l.lng);
   map.setView([l.lat, l.lng], 18);
 }
-jumpSel.onchange = e => { if (e.target.value){ jumpTo(e.target.value, 0); toggleDrawer(false); } };
-$("jumpIn").onclick  = () => { const id = jumpSel.value || GAME.locations[0].id; const l = GAME.locations.find(x=>x.id===id); jumpTo(id, Engine.radiusOf(l,state.cfg)-4); toggleDrawer(false); };
-$("jumpOut").onclick = () => { const id = jumpSel.value || GAME.locations[0].id; const l = GAME.locations.find(x=>x.id===id); jumpTo(id, Engine.radiusOf(l,state.cfg)+12); toggleDrawer(false); };
+jumpSel.onchange = e => { if (e.target.value){ jumpTo(e.target.value, 0); makeRoomForMap(); } };
+$("jumpIn").onclick  = () => { const id = jumpSel.value || GAME.locations[0].id; const l = GAME.locations.find(x=>x.id===id); jumpTo(id, Engine.radiusOf(l,state.cfg)-4); makeRoomForMap(); };
+$("jumpOut").onclick = () => { const id = jumpSel.value || GAME.locations[0].id; const l = GAME.locations.find(x=>x.id===id); jumpTo(id, Engine.radiusOf(l,state.cfg)+12); makeRoomForMap(); };
 
 /* path controls */
-$("pathMode").onclick = () => { pathMode = !pathMode; if (pathMode) { tapMode = false; endPlacing(); } setSrcButtons(); if (pathMode) toggleDrawer(false); };
+$("pathMode").onclick = () => { pathMode = !pathMode; if (pathMode) { tapMode = false; endPlacing(); } setSrcButtons(); if (pathMode) makeRoomForMap(); };
 $("pathPlay").onclick = () => {
   if (sim.path.length < 2) { alert("Draw a path first: tap 'Draw path', then tap two or more points on the map."); return; }
   sim.travelled = 0; sim.at = { lat:sim.path[0][0], lng:sim.path[0][1] };
   sim.playing = true; $("pathPlay").classList.add("on");
   setSim(sim.at.lat, sim.at.lng); sim.playing = true;
-  toggleDrawer(false);
+  makeRoomForMap();
 };
 $("pathClear").onclick = () => {
   sim.path = []; sim.playing = false;
@@ -457,7 +472,7 @@ $("blowAcc").onclick = () => {
 $("forceOpen").onclick = () => {
   const ranges = state.fix ? Engine.ranges(state.fix, GAME.locations, state.cfg) : Engine.ranges({lat:map.getCenter().lat,lng:map.getCenter().lng,accuracy:10}, GAME.locations, state.cfg);
   const next = ranges.find(g => !state.opened.includes(g.id)); if (!next) return;
-  state.opened.push(next.id); markReached(next.id); save(); toggleDrawer(false); openSheet(next.id); render();
+  state.opened.push(next.id); markReached(next.id); save(); makeRoomForMap(); openSheet(next.id); render();
 };
 $("openAll").onclick = () => { GAME.locations.forEach(l => { if(!state.opened.includes(l.id)) state.opened.push(l.id); markReached(l.id); }); save(); render(); };
 $("reset").onclick = () => {
@@ -500,14 +515,16 @@ function startPlacing(){
   const id = capSel.value;
   poiMode = true; tapMode = false; pathMode = false;
   pins[id].dragging.enable();
+  document.body.classList.add("placing");
   styleRing(id); setSrcButtons(); renderPoi();
   $("poibar").hidden = false;
   map.setView(pins[id].getLatLng(), Math.max(map.getZoom(), 18));
-  toggleDrawer(false);
+  makeRoomForMap();
 }
 function endPlacing(){
   if (!poiMode) return;
   poiMode = false;
+  document.body.classList.remove("placing");
   GAME.locations.forEach(l => { pins[l.id].dragging.disable(); styleRing(l.id); });
   $("poibar").hidden = true; setSrcButtons();
 }
@@ -524,6 +541,12 @@ capSel.onchange = () => {
   if (wasPlacing) startPlacing();
 };
 $("poiPlace").onclick = startPlacing;
+$("poiCoords").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("poiApply").click(); } });
+// With the panel open, clicking a pin selects that location for editing (not while placing another).
+GAME.locations.forEach(l => pins[l.id].on("click", () => {
+  if (!drawerOpen || poiMode || capSel.value === l.id) return;
+  capSel.value = l.id; renderPoi();
+}));
 $("poiDone").onclick = () => { endPlacing(); toggleDrawer(true); };
 $("poiApply").onclick = () => {
   const id = capSel.value;

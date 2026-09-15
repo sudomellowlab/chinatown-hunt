@@ -158,3 +158,22 @@ input[type=text]{font-family:var(--mono);font-size:14px;padding:10px;min-height:
 body.dev #poibar{top:calc(env(safe-area-inset-top) + 74px)}
 #poibar span{flex:1}
 #poiDone{min-height:44px;padding:0 18px;background:var(--ink);color:var(--sheet);border:none;font-size:15px}
+
+/* ---------- computer screens: the drawer docks beside the map ---------- */
+body.placing .leaflet-container{cursor:crosshair}
+body.placing .leaflet-marker-draggable{cursor:grab}
+@media (min-width:960px){
+  #drawer{left:auto;width:440px;border-left:2px solid var(--ink);transform:translateX(101%)}
+  #drawer.up{transform:translateX(0)}
+  body.panel #map,
+  body.panel #strip,
+  body.panel #hud,
+  body.panel #sheet{right:440px}
+  body.panel #poibar{right:450px}
+  body.panel #devbtn{display:none}
+  #poibar{left:auto;right:10px;width:min(560px,calc(100% - 20px))}
+  body.panel #poibar{width:min(560px,calc(100% - 470px))}
+  #sheet{max-width:none}
+}
+.leaflet-top.leaflet-right{margin-top:40px}
+body.dev .leaflet-top.leaflet-right{margin-top:70px}

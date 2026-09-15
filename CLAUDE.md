@@ -2,6 +2,8 @@
 
 A GPS treasure hunt for one phone per team, walking eight locations around Telok Ayer and Ann Siang Hill in Singapore. Walking into a location's geofence opens it, and each location presents a sequence of tasks. It ships as one self-contained HTML file on a static HTTPS host: no backend, no accounts, progress stored in `localStorage`.
 
+**Two audiences.** Participants play on phones. Admins set locations, replay walks and export data in a desktop browser, where the drawer docks as a panel beside the map (960 px and wider); on a phone it is a full-screen sheet. Design admin features for a computer first.
+
 ## Layout
 
 ```
@@ -33,7 +35,7 @@ node scripts/replay.js walks/x.json --radius 25 --ceiling 50 --streak 3   # repl
 python3 -m http.server 8765 --bind 127.0.0.1   # preview: /src/index.html?dev=1 or /dist/chinatown-hunt.html?dev=1
 ```
 
-Browser tests read location coordinates from the page and pick test positions geometrically, so they survive real coordinates replacing the placeholders. Chromium's geolocation emulation sends a code-2 "position unavailable" error before every emulated update, which conveniently exercises the app's transient-error handling; any alert a test doesn't expect fails it.
+Playwright runs two projects: `phone` (Pixel 7: the game, recorder) and `desktop` (1440×900: the location editor, recorder and replay). Browser tests read location coordinates from the page and pick test positions geometrically, so they survive real coordinates replacing the placeholders. Chromium's geolocation emulation sends a code-2 "position unavailable" error before every emulated update, which conveniently exercises the app's transient-error handling; any alert a test doesn't expect fails it.
 
 `src/` needs a local server because it loads modules; `dist/` also opens by double-clicking. `?dev=1` turns on the location emulator. Ask before adding any dependency; Leaflet and Playwright are the only ones agreed.
 
