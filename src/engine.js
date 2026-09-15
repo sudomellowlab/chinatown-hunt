@@ -15,9 +15,13 @@ const Engine = {
   },
 
   // Is this fix trustworthy enough to act on?
+  // Number.isFinite, not isFinite: the global one coerces, so null became 0°,0°.
   screen(fix, cfg){
-    if (!isFinite(fix.lat) || !isFinite(fix.lng)) return { ok:false, why:"malformed" };
-    if (fix.accuracy > cfg.accuracyCeiling)
+    const { lat, lng, accuracy } = fix;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180)
+      return { ok:false, why:"malformed" };
+    if (!Number.isFinite(accuracy)) return { ok:false, why:"no accuracy reported" };
+    if (accuracy > cfg.accuracyCeiling)
       return { ok:false, why:`±${Math.round(fix.accuracy)}m over ${cfg.accuracyCeiling}m ceiling` };
     return { ok:true, why:"accepted" };
   },
