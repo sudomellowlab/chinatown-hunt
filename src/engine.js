@@ -1,6 +1,7 @@
 /* ════════════════════════════════════════════════════════════════════
    GEOFENCE ENGINE
-   Pure functions only. No DOM, no map, no globals beyond GAME.
+   Pure functions only. No DOM, no map, no globals, no clock — time
+   arrives on each fix as fix.t (ms since epoch).
    Real fixes and simulated fixes both enter through ingest() and are
    treated identically — if this ever branches on source, the emulator
    stops proving anything about live behaviour.
@@ -30,10 +31,31 @@ const Engine = {
       .sort((a,b) => a.d - b.d);
   },
 
-  /* Returns the streaks and any locations that just opened.
-     A rejected fix carries no information, so it leaves streaks untouched
-     rather than resetting them — a single bad reading must never undo
-     progress made by good ones. Opened locations never re-lock. */
+  /* Manual-override eligibility: within overrideRange (default 60m) of an
+     unopened location for longer than overrideDwellMs (default 90s).
+     nearSince maps location id -> fix.t when the walker first came in range;
+     leaving range or the location opening clears it. Timing comes from the
+     fixes, never the wall clock, so a replay at any speed reaches the same
+     verdict as the live walk. A fix without a usable t can't measure time,
+     so it leaves the timers as they were.
+     Carried over from the M1 rig as-is: this runs on every fix, including
+     ones screen() rejected. */
+  dwell(fix, ranges, opened, prev, cfg){
+    if (!isFinite(fix.t)) return { nearSince:{ ...prev }, ready:[] };
+    const range = cfg.overrideRange ?? 60, wait = cfg.overrideDwellMs ?? 90000;
+    const nearSince = {}, ready = [];
+    for (const g of ranges) {
+      if (opened.has(g.id) || !(g.d <= range)) continue;
+      nearSince[g.id] = prev[g.id] ?? fix.t;
+      if (fix.t - nearSince[g.id] > wait) ready.push(g.id);
+    }
+    return { nearSince, ready };
+  },
+
+  /* Returns the streaks, any locations that just opened, and the override
+     timers. A rejected fix carries no information, so it leaves streaks
+     untouched rather than resetting them — a single bad reading must never
+     undo progress made by good ones. Opened locations never re-lock. */
   ingest(fix, locations, cfg, prev){
     const streaks = { ...prev.streaks };
     const opened  = new Set(prev.opened);
@@ -52,7 +74,9 @@ const Engine = {
         }
       }
     }
-    return { screen, ranges, streaks, opened:[...opened], fired };
+    const dwell = Engine.dwell(fix, ranges, opened, prev.nearSince || {}, cfg);
+    return { screen, ranges, streaks, opened:[...opened], fired,
+             nearSince:dwell.nearSince, overrideReady:dwell.ready };
   }
 };
 

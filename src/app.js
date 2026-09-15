@@ -54,7 +54,8 @@ const state = {
   fix: null,
   fixes: 0,
   log: [],
-  nearSince: {}          // locId -> ms timestamp first seen within 60m
+  nearSince: {},         // locId -> fix.t first seen within override range (engine-owned)
+  overrideReady: []      // locIds eligible for the manual override, as of the last fix
 };
 function save(){ try{ store.setItem(KEY, JSON.stringify({ opened:state.opened, startedAt:state.startedAt, locations:GAME.locations })); }catch(e){} }
 function load(){
@@ -113,20 +114,17 @@ let frozen = false;
 
 function onFix(fix){
   if (frozen) return;
+  // Stamp with time of receipt unless the fix already carries one (a replay will).
+  fix = { ...fix, t: fix.t ?? Date.now() };
   state.fix = fix; state.fixes++;
 
-  const out = Engine.ingest(fix, GAME.locations, state.cfg, { streaks:state.streaks, opened:state.opened });
+  const out = Engine.ingest(fix, GAME.locations, state.cfg,
+    { streaks:state.streaks, opened:state.opened, nearSince:state.nearSince });
   state.streaks = out.streaks;
   const grew = out.opened.length !== state.opened.length;
   state.opened = out.opened;
-
-  // Manual-override eligibility: 90s loitering within 60m of an unopened pin.
-  const now = Date.now();
-  out.ranges.forEach(g => {
-    if (state.opened.includes(g.id)) { delete state.nearSince[g.id]; return; }
-    if (g.d <= 60) { if (!state.nearSince[g.id]) state.nearSince[g.id] = now; }
-    else delete state.nearSince[g.id];
-  });
+  state.nearSince = out.nearSince;
+  state.overrideReady = out.overrideReady;
 
   logFix(fix, out);
   drawYou(fix, source === "sim");
@@ -165,8 +163,8 @@ function render(out){
   txt.textContent = frozen ? "feed frozen" : source === "real" ? "live GPS" : source === "sim" ? "simulated" : "no position";
 
   // override button
-  const ob = $("override"), now = Date.now();
-  const eligible = next && state.nearSince[next.id] && (now - state.nearSince[next.id]) > 90000;
+  const ob = $("override");
+  const eligible = next && state.overrideReady.includes(next.id);
   ob.classList.toggle("show", !!eligible);
   ob.dataset.id = next ? next.id : "";
 

@@ -263,7 +263,8 @@ textarea{font-family:var(--mono);font-size:11px;height:160px;line-height:1.45}
 <script type="module">
 /* ════════════════════════════════════════════════════════════════════
    GEOFENCE ENGINE
-   Pure functions only. No DOM, no map, no globals beyond GAME.
+   Pure functions only. No DOM, no map, no globals, no clock — time
+   arrives on each fix as fix.t (ms since epoch).
    Real fixes and simulated fixes both enter through ingest() and are
    treated identically — if this ever branches on source, the emulator
    stops proving anything about live behaviour.
@@ -293,10 +294,31 @@ const Engine = {
       .sort((a,b) => a.d - b.d);
   },
 
-  /* Returns the streaks and any locations that just opened.
-     A rejected fix carries no information, so it leaves streaks untouched
-     rather than resetting them — a single bad reading must never undo
-     progress made by good ones. Opened locations never re-lock. */
+  /* Manual-override eligibility: within overrideRange (default 60m) of an
+     unopened location for longer than overrideDwellMs (default 90s).
+     nearSince maps location id -> fix.t when the walker first came in range;
+     leaving range or the location opening clears it. Timing comes from the
+     fixes, never the wall clock, so a replay at any speed reaches the same
+     verdict as the live walk. A fix without a usable t can't measure time,
+     so it leaves the timers as they were.
+     Carried over from the M1 rig as-is: this runs on every fix, including
+     ones screen() rejected. */
+  dwell(fix, ranges, opened, prev, cfg){
+    if (!isFinite(fix.t)) return { nearSince:{ ...prev }, ready:[] };
+    const range = cfg.overrideRange ?? 60, wait = cfg.overrideDwellMs ?? 90000;
+    const nearSince = {}, ready = [];
+    for (const g of ranges) {
+      if (opened.has(g.id) || !(g.d <= range)) continue;
+      nearSince[g.id] = prev[g.id] ?? fix.t;
+      if (fix.t - nearSince[g.id] > wait) ready.push(g.id);
+    }
+    return { nearSince, ready };
+  },
+
+  /* Returns the streaks, any locations that just opened, and the override
+     timers. A rejected fix carries no information, so it leaves streaks
+     untouched rather than resetting them — a single bad reading must never
+     undo progress made by good ones. Opened locations never re-lock. */
   ingest(fix, locations, cfg, prev){
     const streaks = { ...prev.streaks };
     const opened  = new Set(prev.opened);
@@ -315,7 +337,9 @@ const Engine = {
         }
       }
     }
-    return { screen, ranges, streaks, opened:[...opened], fired };
+    const dwell = Engine.dwell(fix, ranges, opened, prev.nearSince || {}, cfg);
+    return { screen, ranges, streaks, opened:[...opened], fired,
+             nearSince:dwell.nearSince, overrideReady:dwell.ready };
   }
 };
 
@@ -373,7 +397,8 @@ const state = {
   fix: null,
   fixes: 0,
   log: [],
-  nearSince: {}          // locId -> ms timestamp first seen within 60m
+  nearSince: {},         // locId -> fix.t first seen within override range (engine-owned)
+  overrideReady: []      // locIds eligible for the manual override, as of the last fix
 };
 function save(){ try{ store.setItem(KEY, JSON.stringify({ opened:state.opened, startedAt:state.startedAt, locations:GAME.locations })); }catch(e){} }
 function load(){
@@ -432,20 +457,17 @@ let frozen = false;
 
 function onFix(fix){
   if (frozen) return;
+  // Stamp with time of receipt unless the fix already carries one (a replay will).
+  fix = { ...fix, t: fix.t ?? Date.now() };
   state.fix = fix; state.fixes++;
 
-  const out = Engine.ingest(fix, GAME.locations, state.cfg, { streaks:state.streaks, opened:state.opened });
+  const out = Engine.ingest(fix, GAME.locations, state.cfg,
+    { streaks:state.streaks, opened:state.opened, nearSince:state.nearSince });
   state.streaks = out.streaks;
   const grew = out.opened.length !== state.opened.length;
   state.opened = out.opened;
-
-  // Manual-override eligibility: 90s loitering within 60m of an unopened pin.
-  const now = Date.now();
-  out.ranges.forEach(g => {
-    if (state.opened.includes(g.id)) { delete state.nearSince[g.id]; return; }
-    if (g.d <= 60) { if (!state.nearSince[g.id]) state.nearSince[g.id] = now; }
-    else delete state.nearSince[g.id];
-  });
+  state.nearSince = out.nearSince;
+  state.overrideReady = out.overrideReady;
 
   logFix(fix, out);
   drawYou(fix, source === "sim");
@@ -484,8 +506,8 @@ function render(out){
   txt.textContent = frozen ? "feed frozen" : source === "real" ? "live GPS" : source === "sim" ? "simulated" : "no position";
 
   // override button
-  const ob = $("override"), now = Date.now();
-  const eligible = next && state.nearSince[next.id] && (now - state.nearSince[next.id]) > 90000;
+  const ob = $("override");
+  const eligible = next && state.overrideReady.includes(next.id);
   ob.classList.toggle("show", !!eligible);
   ob.dataset.id = next ? next.id : "";
 
