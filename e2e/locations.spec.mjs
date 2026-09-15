@@ -244,3 +244,53 @@ test("clicking a pin selects it, and Enter applies pasted coordinates", async ({
   expect(find(await exported(page), THK)).toMatchObject({ lat: 1.281111, lng: 103.847777 });
   await expect(page.locator("#poiCoords")).toHaveValue("");
 });
+
+// Drag a location's pin by (dx, dy) pixels with the mouse, in small steps like a person would.
+async function dragPin(page, id, dx, dy) {
+  const box = await page.locator(`.pin[data-id="${id}"]`).boundingBox();
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(x + dx * i / 10, y + dy * i / 10);
+  await page.mouse.up();
+}
+
+test("with the panel open, any pin can be dragged straight away", async ({ app, page }) => {
+  await app.open();
+  await openDrawer(page);
+  await select(page, CLUB);                                   // a different location is selected
+  await expect(page.locator(".leaflet-zoom-anim")).toHaveCount(0);
+  const old = find(await exported(page), THK);
+  const ringBefore = await page.locator("path.leaflet-interactive").nth(1).boundingBox();
+
+  await dragPin(page, THK, 0, -100);                          // ~60 m north at zoom 18, no "Place on map"
+
+  await expect(page.locator("#capTarget")).toHaveValue(THK);  // grabbing a pin selects it
+  const moved = find(await exported(page), THK);
+  expect(moved.lat).toBeGreaterThan(old.lat);
+  expect(metres(old, moved)).toBeGreaterThan(50);
+  expect(metres(old, moved)).toBeLessThan(70);
+  expect(Math.abs(moved.lng - old.lng) * 111_195).toBeLessThan(5);
+  await expect(page.locator("#poiInfo")).toContainText("edited on this device");
+  const ringAfter = await page.locator("path.leaflet-interactive").nth(1).boundingBox();
+  expect(ringAfter.y, "the geofence circle moved with the pin").toBeLessThan(ringBefore.y - 80);
+
+  // …and the move survives a reload.
+  await page.reload();
+  await expect(page.locator(".pin")).toHaveCount(8);
+  await openDrawer(page);
+  expect(find(await exported(page), THK)).toMatchObject({ lat: moved.lat, lng: moved.lng });
+});
+
+test("with the tools closed, dragging a pin just pans the map", async ({ app, page }) => {
+  await app.open();
+  await openDrawer(page);
+  const before = await exported(page);
+  await closeDrawer(page);
+  await expect.poll(async () => (await page.locator("#map").boundingBox()).width).toBe(page.viewportSize().width);
+
+  await dragPin(page, THK, 0, -100);
+
+  await openDrawer(page);
+  expect(await exported(page)).toEqual(before);
+});

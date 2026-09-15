@@ -382,6 +382,7 @@ function toggleDrawer(open){
 function layoutPanel(){
   document.body.classList.toggle("panel", drawerOpen && wideScreen.matches);
   map.invalidateSize();
+  syncPinDragging();
 }
 wideScreen.addEventListener("change", layoutPanel);
 // After a drawer action that needs the map: close the sheet on a phone, stay open beside the map on a computer.
@@ -511,6 +512,7 @@ function renderPoi(){
   const n = Object.keys(poi.edits).length, r = Engine.radiusOf(l, state.cfg);
   $("poiInfo").textContent =
     `${l.lat.toFixed(6)}, ${l.lng.toFixed(6)} · radius ${r} m · ${poi.edits[l.id] ? "edited on this device" : "as in GAME"}` +
+    (wideScreen.matches ? "\nDrag any pin on the map to move it." : "") +
     (n ? `\n${n} of ${GAME.locations.length} locations edited on this device only. Export and paste into GAME.locations to keep them.` : "") +
     (poi.notice ? `\n${poi.notice}` : "");
   $("capRad").value = r; $("capRadO").textContent = r + " m";
@@ -521,8 +523,8 @@ function renderPoi(){
 function startPlacing(){
   const id = capSel.value;
   poiMode = true; tapMode = false; pathMode = false;
-  pins[id].dragging.enable();
   document.body.classList.add("placing");
+  syncPinDragging();
   styleRing(id); setSrcButtons(); renderPoi();
   $("poibar").hidden = false;
   map.setView(pins[id].getLatLng(), Math.max(map.getZoom(), 18));
@@ -532,13 +534,30 @@ function endPlacing(){
   if (!poiMode) return;
   poiMode = false;
   document.body.classList.remove("placing");
-  GAME.locations.forEach(l => { pins[l.id].dragging.disable(); styleRing(l.id); });
+  syncPinDragging();
+  GAME.locations.forEach(l => styleRing(l.id));
   $("poibar").hidden = true; setSrcButtons();
 }
-GAME.locations.forEach(l => pins[l.id].on("dragend", () => {
-  const ll = pins[l.id].getLatLng();
-  setPoi(l.id, { lat:ll.lat, lng:ll.lng });
-}));
+/* Which pins can be dragged: every pin while the admin panel is open on a computer, so a
+   location can be moved by simply dragging it; on a phone only the one being placed, so
+   panning the map in the field never moves a location by accident. Never for participants. */
+function syncPinDragging(){
+  const all = document.body.classList.contains("panel");
+  GAME.locations.forEach(l => {
+    const on = all || (poiMode && l.id === capSel.value);
+    on ? pins[l.id].dragging.enable() : pins[l.id].dragging.disable();
+  });
+}
+GAME.locations.forEach(l => {
+  pins[l.id].on("dragstart", () => {
+    if (capSel.value !== l.id) { capSel.value = l.id; renderPoi(); }
+  });
+  pins[l.id].on("drag", e => rings[l.id].setLatLng(e.latlng));      // the geofence follows the pin
+  pins[l.id].on("dragend", () => {
+    const ll = pins[l.id].getLatLng();
+    setPoi(l.id, { lat:ll.lat, lng:ll.lng });
+  });
+});
 
 capSel.onchange = () => {
   const wasPlacing = poiMode;

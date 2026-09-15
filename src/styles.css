@@ -177,3 +177,5 @@ body.placing .leaflet-marker-draggable{cursor:grab}
 }
 .leaflet-top.leaflet-right{margin-top:40px}
 body.dev .leaflet-top.leaflet-right{margin-top:70px}
+body.panel .leaflet-marker-draggable{cursor:grab}
+body.panel .leaflet-marker-draggable:active{cursor:grabbing}
