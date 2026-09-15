@@ -80,6 +80,8 @@ test("progress survives a page reload", async ({ app, page }) => {
   await expect(app.pin(loc.id)).toHaveClass(/\breached\b/);
   await expect(page.locator(".pin.reached")).toHaveCount(1);
   await expect(app.sheet()).not.toHaveClass(/\bup\b/);
+  // With no position yet after the reload, the HUD must not claim everything is done.
+  await expect(page.locator("#target")).toHaveText("—");
 });
 
 test("the manual override appears after 90s within 60m, and not before", async ({ app, page }) => {

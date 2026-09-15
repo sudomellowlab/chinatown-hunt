@@ -20,6 +20,11 @@
 
 <div id="map"></div>
 
+<div id="poibar" hidden>
+  <span id="poibarText"></span>
+  <button id="poiDone">Done</button>
+</div>
+
 <div id="hud">
   <div class="to">nearest unreached</div>
   <h1 class="name" id="target">—</h1>
@@ -44,6 +49,28 @@
 
 <div id="drawer">
   <header><h3>Location emulator</h3><button id="drawerclose">close</button></header>
+
+  <div class="grp">
+    <h4>Locations</h4>
+    <div class="row"><select id="capTarget"></select></div>
+    <div class="note" id="poiInfo"></div>
+    <div class="row">
+      <button class="btn" id="poiPlace">Place on map</button>
+      <button class="btn" id="capHere">Use my position</button>
+    </div>
+    <div class="row">
+      <input type="text" id="poiCoords" inputmode="decimal" autocomplete="off" spellcheck="false"
+             placeholder="Paste coordinates or a Google Maps link" aria-label="Coordinates">
+      <button class="btn" id="poiApply">Set</button>
+    </div>
+    <label class="fld"><span>Radius</span><input type="range" id="capRad" min="5" max="80" step="1" value="25"><output id="capRadO">25 m</output></label>
+    <div class="row">
+      <button class="btn" id="capExport">Copy JSON</button>
+      <button class="btn" id="poiDownload">Download JSON</button>
+      <button class="btn warn" id="poiRevert">Revert</button>
+    </div>
+    <textarea id="capOut" readonly placeholder="Copy JSON puts the locations here, ready to paste over GAME.locations."></textarea>
+  </div>
 
   <div class="grp">
     <h4>Position source</h4>
@@ -129,16 +156,6 @@
     <label class="fld" style="margin-top:11px"><span>Clock</span><input type="range" id="clockSet" min="0" max="120" step="1" value="120"><output id="clockSetO">120 min</output></label>
   </div>
 
-  <div class="grp">
-    <h4>Coordinate capture</h4>
-    <div class="row"><select id="capTarget"></select></div>
-    <label class="fld"><span>Radius</span><input type="range" id="capRad" min="10" max="80" step="1" value="25"><output id="capRadO">25 m</output></label>
-    <div class="row">
-      <button class="btn" id="capHere">Capture this spot</button>
-      <button class="btn" id="capExport">Export JSON</button>
-    </div>
-    <textarea id="capOut" readonly placeholder="Captured coordinates appear here, ready to paste back into GAME.locations."></textarea>
-  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>

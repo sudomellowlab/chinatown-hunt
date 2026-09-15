@@ -11,7 +11,7 @@ const swap = (s, find, repl, what) => {
 
 // The libraries and app.js become one inline module, so the import/export glue goes.
 // Each library exports one object, which app.js imports under the same name.
-const LIBS = { "engine.js": "Engine", "session.js": "Walk" };
+const LIBS = { "engine.js": "Engine", "session.js": "Walk", "poi.js": "Poi" };
 let app = src("app.js");
 const libs = Object.entries(LIBS).map(([file, name]) => {
   app = swap(app, `import { ${name} } from "./${file}";\n`, "", `import of ${name} in app.js`);

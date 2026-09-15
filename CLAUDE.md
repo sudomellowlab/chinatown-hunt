@@ -7,6 +7,7 @@ A GPS treasure hunt for one phone per team, walking eight locations around Telok
 ```
 src/engine.js        geofence engine: pure functions, ES module
 src/session.js       walk recording and walk-file format: pure, shared by the app and the CLI
+src/poi.js           hand-placed location edits and coordinate parsing: pure
 src/app.js           map (Leaflet from CDN), UI, dev drawer, GAME content at the top
 src/styles.css
 src/index.html       markup; links styles.css and app.js
@@ -42,6 +43,7 @@ Browser tests read location coordinates from the page and pick test positions ge
 - **Every fix enters through one function** (`onFix` → `Engine.ingest`), whether it's real, simulated or replayed. Nothing branches on a fix's source; if it did, the tests and emulator would stop proving anything about live behaviour.
 - **A rejected fix leaves streaks untouched.** It doesn't reset them. One bad reading must never undo progress from good ones, and tests fail if this is "fixed".
 - **Opened locations never re-lock**, however far the walker goes afterwards.
+- **Location edits made in the drawer are per-device, and yield to GAME.** Each edit stores the GAME values it started from and is dropped once GAME differs, so a phone never overrides coordinates deployed in the code. Only `GAME.locations` in `src/app.js` reaches every phone; export from the drawer and paste it there.
 - **Replayed fixes aren't recorded.** The recorder skips `source === "replay"`, so exporting after a replay doesn't duplicate the walk. This is recorder bookkeeping, not engine logic; the engine never sees `source`.
 - **The manual-override dwell timer uses each fix's `t`, never the wall clock**, so replays at any speed reach the same verdict as a live walk. Rejected fixes neither start nor clear a timer.
 - **The built artifact stays a single self-contained file.** No bundler, no framework, no npm install needed to produce it.

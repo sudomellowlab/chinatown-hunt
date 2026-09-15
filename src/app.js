@@ -1,12 +1,14 @@
 import { Engine } from "./engine.js";
 import { Walk } from "./session.js";
+import { Poi } from "./poi.js";
 
 /* ════════════════════════════════════════════════════════════════════
    GAME CONTENT
    Everything a non-developer needs to edit lives in this one object.
    COORDINATES BELOW ARE APPROXIMATE PLACEHOLDERS. Walk the route with
-   ?dev=1, use the capture tool at the bottom of the drawer, and paste
-   the exported array back over GAME.locations.
+   ?dev=1, set each location in the drawer's Locations panel (tap the
+   map, drag the pin, paste coordinates or use your position), export,
+   and paste the array back over GAME.locations.
    ════════════════════════════════════════════════════════════════════ */
 const GAME = {
   title: "Historical Hunt — Chinatown",
@@ -58,20 +60,33 @@ const state = {
   nearSince: {},         // locId -> fix.t first seen within override range (engine-owned)
   overrideReady: []      // locIds eligible for the manual override, as of the last fix
 };
-function save(){ try{ store.setItem(KEY, JSON.stringify({ opened:state.opened, startedAt:state.startedAt, locations:GAME.locations })); }catch(e){} }
+function save(){ try{ store.setItem(KEY, JSON.stringify({ opened:state.opened, startedAt:state.startedAt })); }catch(e){} }
 function load(){
   try{
     const raw = store.getItem(KEY); if(!raw) return;
     const d = JSON.parse(raw);
     if (Array.isArray(d.opened)) state.opened = d.opened;
     if (d.startedAt) state.startedAt = d.startedAt;
-    if (Array.isArray(d.locations) && d.locations.length === GAME.locations.length) {
-      d.locations.forEach((l,i) => { if(l.id === GAME.locations[i].id){ GAME.locations[i].lat=l.lat; GAME.locations[i].lng=l.lng; GAME.locations[i].radius=l.radius; } });
-    }
   }catch(e){}
 }
 load();
 if (!state.startedAt) { state.startedAt = Date.now(); save(); }
+
+/* Location edits made in the drawer live on this device only, as edits over GAME.
+   An edit is dropped once GAME no longer has the coordinates it was made against,
+   so a phone never overrides newer coordinates deployed in the code. */
+const POI_KEY = KEY + ":poi";
+const GAME_BASE = structuredClone(GAME.locations);
+const poi = { edits:{}, notice:"" };
+{
+  let stored = {};
+  try { stored = JSON.parse(store.getItem(POI_KEY)) || {}; } catch(e){}
+  const r = Poi.apply(GAME_BASE, stored);
+  GAME.locations = r.locations;
+  poi.edits = r.edits;
+  if (r.stale.length) poi.notice = `Dropped edits for ${r.stale.map(id => GAME_BASE.find(l => l.id === id).name).join(", ")}: GAME's coordinates changed since they were made.`;
+  if (r.stale.length || r.unknown.length) { try { store.setItem(POI_KEY, JSON.stringify(poi.edits)); } catch(e){} }
+}
 
 /* Walk recording: every fix the engine sees, kept apart from game progress so that
    resetting progress never loses a walk. Flushed every few seconds and when the page
@@ -126,6 +141,7 @@ function drawYou(fix, simulated){
    ════════════════════════════════════════════════════════════════════ */
 let source = "none";      // none | real | sim | replay
 let frozen = false;
+let poiMode = false;       // placing a location by hand (see LOCATIONS)
 
 /* src labels the fix for the recorder, the log and the map marker only; the engine never sees it.
    Replayed fixes aren't re-recorded, so exporting after a replay doesn't duplicate the walk. */
@@ -154,8 +170,14 @@ function onFix(fix, src = source){
 function markReached(id){
   const el = pins[id]?.getElement()?.querySelector(".pin");
   if (el) el.classList.add("reached");
-  const ring = rings[id];
-  if (ring) ring.setStyle({ color:"#2E6B5E", fillColor:"#2E6B5E", fillOpacity:.1, dashArray:null });
+  styleRing(id);
+}
+// Ring look: brass while being placed, jade once reached, dashed ink otherwise.
+function styleRing(id){
+  const ring = rings[id]; if (!ring) return;
+  if (poiMode && id === capSel.value) ring.setStyle({ color:"#8A6D2F", fillColor:"#8A6D2F", fillOpacity:.15, weight:2, dashArray:null });
+  else if (state.opened.includes(id)) ring.setStyle({ color:"#2E6B5E", fillColor:"#2E6B5E", fillOpacity:.1, weight:1, dashArray:null });
+  else ring.setStyle({ color:"#16202B", fillColor:"#16202B", fillOpacity:.05, weight:1, dashArray:"3 5" });
 }
 state.opened.forEach(markReached);
 
@@ -169,7 +191,7 @@ function render(out){
   const ranges = out?.ranges || (state.fix ? Engine.ranges(state.fix, GAME.locations, cfg) : []);
   const next = ranges.find(g => !state.opened.includes(g.id));
 
-  $("target").textContent = next ? next.name : (state.opened.length ? "All eight reached" : "—");
+  $("target").textContent = next ? next.name : (state.opened.length === GAME.locations.length ? "All eight reached" : "—");
   $("metres").textContent = next && state.fix ? Math.round(next.d) : "—";
   $("reached").textContent = state.opened.length;
   $("total").textContent = GAME.locations.length;
@@ -330,7 +352,9 @@ function stepWalk(){
 /* map tapping: place position, or add a path waypoint */
 let tapMode = false, pathMode = false;
 map.on("click", e => {
-  if (pathMode){
+  if (poiMode){
+    setPoi(capSel.value, { lat:e.latlng.lat, lng:e.latlng.lng });
+  } else if (pathMode){
     sim.path.push([e.latlng.lat, e.latlng.lng]);
     sim.marks.push(L.circleMarker(e.latlng, { radius:4, color:"#8A6D2F", weight:2, fillOpacity:1, fillColor:"#8A6D2F" }).addTo(map));
     if (sim.line) map.removeLayer(sim.line);
@@ -362,10 +386,11 @@ function setSrcButtons(){
   $("tapMode").classList.toggle("on", tapMode);
   $("freeze").classList.toggle("on", frozen);
   $("pathMode").classList.toggle("on", pathMode);
+  $("poiPlace").classList.toggle("on", poiMode);
 }
 $("srcReal").onclick = startReal;
 $("srcSim").onclick = () => { const c = map.getCenter(); setSim(sim.at?.lat ?? c.lat, sim.at?.lng ?? c.lng); toggleDrawer(false); };
-$("tapMode").onclick = () => { tapMode = !tapMode; if (tapMode) pathMode = false; setSrcButtons(); if (tapMode) toggleDrawer(false); };
+$("tapMode").onclick = () => { tapMode = !tapMode; if (tapMode) { pathMode = false; endPlacing(); } setSrcButtons(); if (tapMode) toggleDrawer(false); };
 $("freeze").onclick = () => { frozen = !frozen; setSrcButtons(); render(); };
 
 /* jump controls */
@@ -385,7 +410,7 @@ $("jumpIn").onclick  = () => { const id = jumpSel.value || GAME.locations[0].id;
 $("jumpOut").onclick = () => { const id = jumpSel.value || GAME.locations[0].id; const l = GAME.locations.find(x=>x.id===id); jumpTo(id, Engine.radiusOf(l,state.cfg)+12); toggleDrawer(false); };
 
 /* path controls */
-$("pathMode").onclick = () => { pathMode = !pathMode; if (pathMode) tapMode = false; setSrcButtons(); if (pathMode) toggleDrawer(false); };
+$("pathMode").onclick = () => { pathMode = !pathMode; if (pathMode) { tapMode = false; endPlacing(); } setSrcButtons(); if (pathMode) toggleDrawer(false); };
 $("pathPlay").onclick = () => {
   if (sim.path.length < 2) { alert("Draw a path first: tap 'Draw path', then tap two or more points on the map."); return; }
   sim.travelled = 0; sim.at = { lat:sim.path[0][0], lng:sim.path[0][1] };
@@ -419,7 +444,7 @@ slider("defRad",   v => v+" m",  v => {
   GAME.locations.forEach(l => { if (l.radius == null) rings[l.id].setRadius(+v); });
   render();
 }, state.cfg.radius);
-slider("capRad",   v => v+" m",  v => { const id = capSel.value; if (rings[id]) rings[id].setRadius(+v); },
+slider("capRad",   v => v+" m",  v => setPoi(capSel.value, { radius:+v }),
   Engine.radiusOf(GAME.locations.find(l => l.id === capSel.value) || {}, state.cfg));
 slider("clockSet", v => v+" min", v => { state.clockMinutes = +v; state.startedAt = Date.now(); renderClock(); }, state.clockMinutes);
 
@@ -436,38 +461,109 @@ $("forceOpen").onclick = () => {
 };
 $("openAll").onclick = () => { GAME.locations.forEach(l => { if(!state.opened.includes(l.id)) state.opened.push(l.id); markReached(l.id); }); save(); render(); };
 $("reset").onclick = () => {
-  if (!confirm("Clear all progress and captured coordinates?")) return;
+  if (!confirm("Clear all game progress? Location edits and the walk recording are kept.")) return;
   store.removeItem(KEY); location.reload();
 };
 
-/* capture tool */
-capSel.onchange = () => {
+/* ════════════════════════════════════════════════════════════════════
+   LOCATIONS — set each POI by hand: tap the map, drag the pin, paste
+   coordinates, or use the current position; the radius slider applies at
+   once. Edits are stored on this device over GAME (see POI_KEY) and take
+   effect in the engine immediately. Export, then paste into GAME.locations
+   to make them permanent for every phone.
+   ════════════════════════════════════════════════════════════════════ */
+function setPoi(id, changes){
+  const base = GAME_BASE.find(l => l.id === id), l = GAME.locations.find(x => x.id === id);
+  if (!base || !l) return;
+  poi.edits = Poi.edit(poi.edits, base, changes);
+  const v = poi.edits[id]?.value ?? { lat:base.lat, lng:base.lng, radius:base.radius };
+  Object.assign(l, { lat:v.lat, lng:v.lng, radius:v.radius ?? undefined });
+  pins[id].setLatLng([l.lat, l.lng]);
+  rings[id].setLatLng([l.lat, l.lng]).setRadius(Engine.radiusOf(l, state.cfg));
+  try { store.setItem(POI_KEY, JSON.stringify(poi.edits)); } catch(e){ poi.notice = "Couldn't save location edits on this device."; }
+  renderPoi(); render();
+}
+
+function renderPoi(){
   const l = GAME.locations.find(x => x.id === capSel.value); if (!l) return;
-  $("capRad").value = Engine.radiusOf(l, state.cfg);
-  $("capRadO").textContent = $("capRad").value + " m";
-  map.setView([l.lat, l.lng], 18);
+  const n = Object.keys(poi.edits).length, r = Engine.radiusOf(l, state.cfg);
+  $("poiInfo").textContent =
+    `${l.lat.toFixed(6)}, ${l.lng.toFixed(6)} · radius ${r} m · ${poi.edits[l.id] ? "edited on this device" : "as in GAME"}` +
+    (n ? `\n${n} of ${GAME.locations.length} locations edited on this device only. Export and paste into GAME.locations to keep them.` : "") +
+    (poi.notice ? `\n${poi.notice}` : "");
+  $("capRad").value = r; $("capRadO").textContent = r + " m";
+  $("poiRevert").disabled = !poi.edits[l.id];
+  $("poibarText").textContent = `Placing ${l.name} · radius ${r} m`;
+}
+
+function startPlacing(){
+  const id = capSel.value;
+  poiMode = true; tapMode = false; pathMode = false;
+  pins[id].dragging.enable();
+  styleRing(id); setSrcButtons(); renderPoi();
+  $("poibar").hidden = false;
+  map.setView(pins[id].getLatLng(), Math.max(map.getZoom(), 18));
+  toggleDrawer(false);
+}
+function endPlacing(){
+  if (!poiMode) return;
+  poiMode = false;
+  GAME.locations.forEach(l => { pins[l.id].dragging.disable(); styleRing(l.id); });
+  $("poibar").hidden = true; setSrcButtons();
+}
+GAME.locations.forEach(l => pins[l.id].on("dragend", () => {
+  const ll = pins[l.id].getLatLng();
+  setPoi(l.id, { lat:ll.lat, lng:ll.lng });
+}));
+
+capSel.onchange = () => {
+  const wasPlacing = poiMode;
+  endPlacing(); renderPoi();
+  const l = GAME.locations.find(x => x.id === capSel.value);
+  if (l) map.setView([l.lat, l.lng], 18);
+  if (wasPlacing) startPlacing();
+};
+$("poiPlace").onclick = startPlacing;
+$("poiDone").onclick = () => { endPlacing(); toggleDrawer(true); };
+$("poiApply").onclick = () => {
+  const id = capSel.value;
+  let p;
+  try { p = Poi.parseCoords($("poiCoords").value); }
+  catch(e){ alert(`Couldn't read those coordinates: ${e.message}.`); return; }
+  const base = GAME_BASE.find(l => l.id === id);
+  const km = Engine.haversine(base.lat, base.lng, p.lat, p.lng) / 1000;
+  setPoi(id, p);
+  $("poiCoords").value = "";
+  if (km > 2) { poi.notice = `Heads up: that is ${km.toFixed(1)} km from where this location was. Check latitude comes first.`; renderPoi(); }
+  map.setView([p.lat, p.lng], 18);
 };
 $("capHere").onclick = () => {
   if (!state.fix) { alert("No position yet. Start Real GPS or place a simulated position first."); return; }
-  const l = GAME.locations.find(x => x.id === capSel.value); if (!l) return;
-  l.lat = +state.fix.lat.toFixed(6); l.lng = +state.fix.lng.toFixed(6); l.radius = +$("capRad").value;
-  pins[l.id].setLatLng([l.lat, l.lng]);
-  rings[l.id].setLatLng([l.lat, l.lng]).setRadius(l.radius);
-  save(); exportCoords();
-  $("capOut").value = `Captured ${l.name} at ±${Math.round(state.fix.accuracy)}m accuracy.\n\n` + $("capOut").value;
+  setPoi(capSel.value, { lat:state.fix.lat, lng:state.fix.lng });
+  const l = GAME.locations.find(x => x.id === capSel.value);
+  $("capOut").value = `Set ${l.name} to your position (±${Math.round(state.fix.accuracy)} m accuracy).`;
 };
-function exportCoords(){
-  const json = JSON.stringify(GAME.locations.map(l => ({
+$("poiRevert").onclick = () => {
+  const base = GAME_BASE.find(l => l.id === capSel.value); if (!base) return;
+  setPoi(base.id, { lat:base.lat, lng:base.lng, radius:base.radius ?? null });
+};
+
+function locationsJson(){
+  return JSON.stringify(GAME.locations.map(l => ({
     id:l.id, name:l.name, lat:l.lat, lng:l.lng, radius:Engine.radiusOf(l, state.cfg), arrivalText:l.arrivalText
   })), null, 2);
-  $("capOut").value = json;
-  return json;
 }
 $("capExport").onclick = () => {
-  const json = exportCoords();
+  const json = locationsJson();
+  $("capOut").value = json;
   if (navigator.clipboard) navigator.clipboard.writeText(json).catch(()=>{});
   $("capOut").select?.();
 };
+$("poiDownload").onclick = () => {
+  const stamp = Walk.filename().replace("chinatown-walk-", "chinatown-locations-");
+  downloadFile(new File([locationsJson()], stamp, { type:"application/json" }));
+};
+renderPoi();
 
 /* ════════════════════════════════════════════════════════════════════
    WALK RECORDER — export
@@ -500,12 +596,14 @@ function fmtDuration(ms){
 
 $("walkDownload").onclick = () => {
   if (!walk.log.length) { alert("Nothing recorded yet."); return; }
-  const file = walkFile("application/json");
+  downloadFile(walkFile("application/json"));
+};
+function downloadFile(file){
   const url = URL.createObjectURL(file);
   const a = Object.assign(document.createElement("a"), { href:url, download:file.name, rel:"noopener" });
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
-};
+}
 // text/plain is the file type share sheets accept most widely; the .json name is kept.
 const canShareFiles = (() => { try { return !!navigator.canShare?.({ files:[new File(["{}"], "x.json", { type:"text/plain" })] }); } catch(e){ return false; } })();
 $("walkShare").hidden = !canShareFiles;
@@ -592,7 +690,7 @@ function clearProgress(){
   Object.assign(state, { opened:[], streaks:{}, nearSince:{}, overrideReady:[] });
   GAME.locations.forEach(l => {
     pins[l.id]?.getElement()?.querySelector(".pin")?.classList.remove("reached");
-    rings[l.id]?.setStyle({ color:"#16202B", fillColor:"#16202B", fillOpacity:.05, dashArray:"3 5" });
+    styleRing(l.id);
   });
   $("sheet").classList.remove("up");
   save(); render();
