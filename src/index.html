@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Historical Hunt — Chinatown · Field Rig</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="devbanner">emulator active — positions are not real</div>
+
+<div id="strip">
+  <span><span class="dot" id="srcdot"></span><span id="srctxt">starting…</span></span>
+  <span class="sep"></span>
+  <span>±<span class="num" id="acc">—</span>m</span>
+  <span><span class="num" id="fixcount">0</span> fixes</span>
+</div>
+
+<div id="map"></div>
+
+<div id="hud">
+  <div class="to">nearest unreached</div>
+  <h1 class="name" id="target">—</h1>
+  <div class="dist"><span id="metres">—</span><small>m away</small></div>
+  <div class="tally">
+    <span><span id="reached">0</span> of <span id="total">8</span> reached</span>
+    <span id="clock">2:00:00</span>
+  </div>
+  <button id="override">I'm standing right here — open it</button>
+</div>
+
+<button id="devbtn">dev</button>
+
+<div id="sheet">
+  <div class="rule"></div>
+  <div class="place" id="sheetplace"></div>
+  <h2 id="sheetname"></h2>
+  <p id="sheettext"></p>
+  <div class="stub">Tasks for this location arrive in Milestone 2. This rig proves arrival detection only.</div>
+  <button id="sheetclose">Back to the map</button>
+</div>
+
+<div id="drawer">
+  <header><h3>Location emulator</h3><button id="drawerclose">close</button></header>
+
+  <div class="grp">
+    <h4>Position source</h4>
+    <div class="row">
+      <button class="btn" id="srcReal">Real GPS</button>
+      <button class="btn" id="srcSim">Simulated</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="tapMode">Tap map to place</button>
+      <button class="btn" id="freeze">Freeze feed</button>
+    </div>
+    <div class="row">
+      <select id="jump"><option value="">Jump to a location…</option></select>
+    </div>
+    <div class="row">
+      <button class="btn" id="jumpIn">Just inside radius</button>
+      <button class="btn" id="jumpOut">Just outside radius</button>
+    </div>
+  </div>
+
+  <div class="grp">
+    <h4>Simulated walk</h4>
+    <div class="row">
+      <button class="btn" id="pathMode">Draw path</button>
+      <button class="btn" id="pathPlay">Walk it</button>
+      <button class="btn" id="pathClear">Clear</button>
+    </div>
+    <label class="fld"><span>Speed</span><input type="range" id="speed" min="0.5" max="6" step="0.1" value="1.4"><output id="speedO">1.4 m/s</output></label>
+  </div>
+
+  <div class="grp">
+    <h4>Signal quality</h4>
+    <label class="fld"><span>Accuracy</span><input type="range" id="fakeAcc" min="3" max="120" step="1" value="12"><output id="fakeAccO">12 m</output></label>
+    <label class="fld"><span>Jitter</span><input type="range" id="jitter" min="0" max="40" step="1" value="0"><output id="jitterO">0 m</output></label>
+    <label class="fld"><span>Fix interval</span><input type="range" id="interval" min="250" max="5000" step="250" value="1000"><output id="intervalO">1.0 s</output></label>
+    <div class="row"><button class="btn warn" id="blowAcc">Send one bad fix (±80m)</button></div>
+  </div>
+
+  <div class="grp">
+    <h4>Engine settings</h4>
+    <label class="fld"><span>Accuracy ceiling</span><input type="range" id="ceil" min="15" max="120" step="5" value="50"><output id="ceilO">50 m</output></label>
+    <label class="fld"><span>Fixes to open</span><input type="range" id="streakN" min="1" max="8" step="1" value="3"><output id="streakNO">3</output></label>
+    <label class="fld"><span>Default radius</span><input type="range" id="defRad" min="10" max="80" step="1" value="25"><output id="defRadO">25 m</output></label>
+  </div>
+
+  <div class="grp">
+    <h4>Fix log — last 20</h4>
+    <div id="log"></div>
+  </div>
+
+  <div class="grp">
+    <h4>State</h4>
+    <div id="state"></div>
+    <div class="row" style="margin-top:11px">
+      <button class="btn" id="forceOpen">Open nearest</button>
+      <button class="btn" id="openAll">Open all</button>
+      <button class="btn warn" id="reset">Reset progress</button>
+    </div>
+    <label class="fld" style="margin-top:11px"><span>Clock</span><input type="range" id="clockSet" min="0" max="120" step="1" value="120"><output id="clockSetO">120 min</output></label>
+  </div>
+
+  <div class="grp">
+    <h4>Coordinate capture</h4>
+    <div class="row"><select id="capTarget"></select></div>
+    <label class="fld"><span>Radius</span><input type="range" id="capRad" min="10" max="80" step="1" value="25"><output id="capRadO">25 m</output></label>
+    <div class="row">
+      <button class="btn" id="capHere">Capture this spot</button>
+      <button class="btn" id="capExport">Export JSON</button>
+    </div>
+    <textarea id="capOut" readonly placeholder="Captured coordinates appear here, ready to paste back into GAME.locations."></textarea>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

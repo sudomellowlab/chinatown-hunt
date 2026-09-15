@@ -1,0 +1,141 @@
+:root{
+  --linen:#DCE0D8;
+  --linen-deep:#C7CDC3;
+  --ink:#16202B;
+  --slate:#5C6B70;
+  --mark:#9E2B14;
+  --jade:#2E6B5E;
+  --brass:#8A6D2F;
+  --sheet:#E9ECE5;
+  --serif:"Hoefler Text","Iowan Old Style",Palatino,"Palatino Linotype",Georgia,serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  font-family:var(--serif);
+  color:var(--ink);
+  background:var(--linen);
+  -webkit-text-size-adjust:100%;
+  overscroll-behavior:none;
+}
+button{font-family:inherit;color:inherit;cursor:pointer}
+
+/* ---------- map ---------- */
+#map{position:fixed;inset:0;background:var(--linen-deep)}
+.leaflet-container{background:var(--linen-deep);font-family:var(--serif)}
+.leaflet-control-attribution{font-size:9px;background:rgba(220,224,216,.82)}
+
+/* ---------- status strip ---------- */
+#strip{
+  position:fixed;top:0;left:0;right:0;z-index:600;
+  display:flex;gap:14px;align-items:center;
+  padding:calc(env(safe-area-inset-top) + 7px) 12px 7px;
+  background:rgba(220,224,216,.93);
+  border-bottom:1px solid var(--ink);
+  font-size:12px;letter-spacing:.01em;
+}
+#strip .num{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+#strip .sep{flex:1}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--slate);margin-right:5px;vertical-align:1px}
+.dot.live{background:var(--jade)}
+.dot.sim{background:var(--brass)}
+.dot.dead{background:var(--mark)}
+
+/* ---------- dev banner ---------- */
+#devbanner{
+  position:fixed;top:0;left:0;right:0;z-index:700;display:none;
+  padding:calc(env(safe-area-inset-top) + 5px) 12px 5px;
+  background:repeating-linear-gradient(135deg,var(--brass) 0 11px,#7a6029 11px 22px);
+  color:#FFF8E6;font-size:12px;letter-spacing:.05em;text-align:center;
+  border-bottom:1px solid var(--ink);
+}
+body.dev #devbanner{display:block}
+body.dev #strip{top:30px;padding-top:7px}
+
+/* ---------- bottom readout ---------- */
+#hud{
+  position:fixed;left:0;right:0;bottom:0;z-index:600;
+  padding:14px 16px calc(env(safe-area-inset-bottom) + 14px);
+  background:rgba(233,236,229,.95);
+  border-top:1px solid var(--ink);
+}
+#hud .to{font-size:12px;color:var(--slate);margin-bottom:3px}
+#hud .name{font-size:22px;line-height:1.15;margin:0 0 6px}
+#hud .dist{font-family:var(--mono);font-size:34px;font-variant-numeric:tabular-nums;line-height:1}
+#hud .dist small{font-size:15px;color:var(--slate);margin-left:3px}
+#hud .tally{font-size:12px;color:var(--slate);margin-top:7px;display:flex;gap:12px;align-items:center}
+#override{
+  display:none;width:100%;margin-top:11px;padding:14px;min-height:48px;
+  background:var(--mark);color:var(--sheet);border:none;font-size:15px;letter-spacing:.01em;
+}
+#override.show{display:block}
+
+/* ---------- arrival sheet ---------- */
+#sheet{
+  position:fixed;inset:auto 0 0 0;z-index:800;
+  transform:translateY(101%);transition:transform .34s cubic-bezier(.2,.7,.3,1);
+  background:var(--sheet);border-top:2px solid var(--ink);
+  padding:0 20px calc(env(safe-area-inset-bottom) + 20px);
+  max-height:78vh;overflow:auto;
+}
+#sheet.up{transform:translateY(0)}
+#sheet .rule{height:9px;margin:0 -20px 18px;border-bottom:1px solid var(--ink);
+  background:repeating-linear-gradient(90deg,var(--ink) 0 1px,transparent 1px 13px)}
+#sheet h2{font-size:27px;line-height:1.1;margin:0 0 4px;font-weight:600}
+#sheet .place{font-size:12px;color:var(--jade);margin-bottom:14px}
+#sheet p{font-size:16px;line-height:1.55;max-width:62ch;margin:0 0 16px}
+#sheet .stub{font-size:13px;color:var(--slate);border-left:2px solid var(--linen-deep);padding-left:12px;margin-bottom:20px}
+#sheet button{width:100%;padding:15px;min-height:48px;background:var(--ink);color:var(--sheet);border:none;font-size:16px}
+
+/* ---------- dev drawer ---------- */
+#devbtn{
+  position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 142px);z-index:650;
+  width:46px;height:46px;border-radius:50%;border:1px solid var(--ink);
+  background:var(--linen);font-size:11px;letter-spacing:.03em;
+}
+#drawer{
+  position:fixed;inset:0;z-index:900;background:var(--sheet);
+  transform:translateY(101%);transition:transform .3s ease;
+  overflow:auto;padding:0 0 60px;
+}
+#drawer.up{transform:translateY(0)}
+#drawer header{
+  position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;
+  padding:calc(env(safe-area-inset-top) + 12px) 14px 12px;
+  background:var(--ink);color:var(--sheet);
+}
+#drawer header h3{margin:0;font-size:16px;font-weight:500;flex:1}
+#drawer header button{background:none;border:1px solid var(--sheet);color:var(--sheet);padding:7px 13px;font-size:13px}
+.grp{padding:16px 14px;border-bottom:1px solid var(--linen-deep)}
+.grp h4{margin:0 0 11px;font-size:13px;color:var(--slate);font-weight:500}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px}
+.row:last-child{margin-bottom:0}
+.btn{padding:11px 13px;min-height:44px;background:var(--linen);border:1px solid var(--ink);font-size:13px;flex:1;min-width:88px}
+.btn.on{background:var(--ink);color:var(--sheet)}
+.btn.warn{border-color:var(--mark);color:var(--mark)}
+label.fld{display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:11px}
+label.fld span{flex:0 0 108px;color:var(--slate)}
+label.fld input[type=range]{flex:1;min-width:0}
+label.fld output{font-family:var(--mono);font-size:13px;flex:0 0 62px;text-align:right;font-variant-numeric:tabular-nums}
+select,textarea{font-family:var(--serif);font-size:14px;padding:10px;border:1px solid var(--ink);background:var(--linen);width:100%}
+textarea{font-family:var(--mono);font-size:11px;height:160px;line-height:1.45}
+#log{font-family:var(--mono);font-size:10.5px;line-height:1.5;max-height:230px;overflow:auto;
+  border:1px solid var(--linen-deep);background:var(--linen);padding:9px}
+#log div{padding:2px 0;border-bottom:1px solid rgba(92,107,112,.14);white-space:pre-wrap}
+#log .rej{color:var(--mark)}
+#log .hit{color:var(--jade)}
+#state{font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--slate)}
+
+/* ---------- map marks ---------- */
+.pin{
+  width:26px;height:26px;border-radius:50%;border:2px solid var(--ink);
+  background:var(--sheet);display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:12px;font-weight:600;
+}
+.pin.reached{background:var(--jade);border-color:var(--jade);color:var(--sheet)}
+.you{width:16px;height:16px;border-radius:50%;background:var(--ink);border:2.5px solid var(--sheet);
+  box-shadow:0 0 0 1px var(--ink)}
+.you.sim{background:var(--brass)}
+
+@media (prefers-reduced-motion:reduce){#sheet,#drawer{transition:none}}
