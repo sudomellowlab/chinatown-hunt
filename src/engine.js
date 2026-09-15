@@ -36,19 +36,22 @@ const Engine = {
      nearSince maps location id -> fix.t when the walker first came in range;
      leaving range or the location opening clears it. Timing comes from the
      fixes, never the wall clock, so a replay at any speed reaches the same
-     verdict as the live walk. A fix without a usable t can't measure time,
-     so it leaves the timers as they were.
-     Carried over from the M1 rig as-is: this runs on every fix, including
-     ones screen() rejected. */
-  dwell(fix, ranges, opened, prev, cfg){
-    if (!isFinite(fix.t)) return { nearSince:{ ...prev }, ready:[] };
+     verdict as the live walk.
+     As with streaks, a rejected fix says nothing about where the walker is:
+     it neither starts nor clears a timer, though its timestamp still counts
+     toward timers already running. A fix without a usable t can't measure
+     time, so it leaves the timers as they were. */
+  dwell(fix, ranges, opened, prev, cfg, trusted){
+    if (!Number.isFinite(fix.t)) return { nearSince:{ ...prev }, ready:[] };
     const range = cfg.overrideRange ?? 60, wait = cfg.overrideDwellMs ?? 90000;
-    const nearSince = {}, ready = [];
-    for (const g of ranges) {
-      if (opened.has(g.id) || !(g.d <= range)) continue;
-      nearSince[g.id] = prev[g.id] ?? fix.t;
-      if (fix.t - nearSince[g.id] > wait) ready.push(g.id);
+    const nearSince = {};
+    if (trusted) {
+      for (const g of ranges)
+        if (!opened.has(g.id) && g.d <= range) nearSince[g.id] = prev[g.id] ?? fix.t;
+    } else {
+      for (const id in prev) if (!opened.has(id)) nearSince[id] = prev[id];
     }
+    const ready = Object.keys(nearSince).filter(id => fix.t - nearSince[id] > wait);
     return { nearSince, ready };
   },
 
@@ -74,7 +77,7 @@ const Engine = {
         }
       }
     }
-    const dwell = Engine.dwell(fix, ranges, opened, prev.nearSince || {}, cfg);
+    const dwell = Engine.dwell(fix, ranges, opened, prev.nearSince || {}, cfg, screen.ok);
     return { screen, ranges, streaks, opened:[...opened], fired,
              nearSince:dwell.nearSince, overrideReady:dwell.ready };
   }
