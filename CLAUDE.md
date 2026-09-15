@@ -11,7 +11,9 @@ src/styles.css
 src/index.html       markup; links styles.css and app.js
 build.js             zero-dependency Node script, inlines src/ into dist/
 dist/chinatown-hunt.html   the deliverable (gitignored, built locally or by CI)
-test/engine.test.js  unit tests for the engine
+test/engine.test.js  unit tests for the engine (node --test picks up everything under test/)
+e2e/geofence.spec.mjs      Playwright tests of the built file via real geolocation emulation
+playwright.config.mjs, package.json   npm is only for Playwright
 .claude/launch.json  preview server config
 .github/workflows/ci.yml   tests, build, uploads the HTML as an artifact
 .devcontainer/, .nvmrc     Codespace setup: Node 22 + Playwright Chromium
@@ -22,8 +24,12 @@ test/engine.test.js  unit tests for the engine
 ```bash
 node --test          # unit tests, no install needed
 node build.js        # writes dist/chinatown-hunt.html
+npm ci && npx playwright install chromium   # once, for browser tests
+npx playwright test  # browser tests; builds first
 python3 -m http.server 8765 --bind 127.0.0.1   # preview: /src/index.html?dev=1 or /dist/chinatown-hunt.html?dev=1
 ```
+
+Browser tests read location coordinates from the page and pick test positions geometrically, so they survive real coordinates replacing the placeholders. Chromium's geolocation emulation sends a code-2 "position unavailable" error before every emulated update; the tests ignore exactly that alert.
 
 `src/` needs a local server because it loads modules; `dist/` also opens by double-clicking. `?dev=1` turns on the location emulator. Ask before adding any dependency; Leaflet and Playwright are the only ones agreed.
 
@@ -39,4 +45,4 @@ python3 -m http.server 8765 --bind 127.0.0.1   # preview: /src/index.html?dev=1 
 ## Docs
 
 - `SPEC.md`: the full product brief (game content shape, engine rules, screens, dev mode, design). Its "single HTML file, no build step" constraint has been relaxed to the `src/` + `build.js` layout above.
-- `HANDOFF.md`: the current order of work, which overrides SPEC.md's build order. Step 1 (modules) and Step 2 (engine tests) are done; next is Step 3 (Playwright), then Step 4 (fix recorder and replay), then Milestone 2. Stop for review after each step, and commit at each step.
+- `HANDOFF.md`: the current order of work, which overrides SPEC.md's build order. Steps 1–3 (modules, engine tests, Playwright) are done; next is Step 4 (fix recorder and replay), then Milestone 2. Stop for review after each step, and commit at each step.
