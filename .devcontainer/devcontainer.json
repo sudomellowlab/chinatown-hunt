@@ -1,0 +1,22 @@
+{
+  "name": "chinatown-hunt",
+  // Node 22 on Debian 12, matching .nvmrc and CI. Includes git and python3 (for the preview server).
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:5-22-bookworm",
+
+  // Tests and build need only Node. This installs Playwright's Chromium and its system
+  // libraries up front so Step 3's browser tests run in a cold Codespace.
+  // Until Step 3 adds package.json, Playwright is pinned here; afterwards npm ci installs
+  // the locked version and `npx playwright install` uses that, so keep the two in step.
+  "postCreateCommand": "if [ -f package-lock.json ]; then npm ci && npx playwright install --with-deps chromium; else npx --yes playwright@1.63.0 install --with-deps chromium; fi",
+
+  "forwardPorts": [8765],
+  "portsAttributes": {
+    "8765": { "label": "preview (python3 -m http.server)", "onAutoForward": "notify" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-playwright.playwright"]
+    }
+  }
+}
