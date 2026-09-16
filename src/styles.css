@@ -271,3 +271,6 @@ figure.pic img{display:block;width:100%;height:auto;max-height:46vh;object-fit:c
 .imgprev.bad{color:var(--mark)}
 .imgprev img{display:block;max-width:100%;max-height:140px;border:1px solid var(--linen-deep);background:var(--linen)}
 input.imglink{font-family:var(--mono);font-size:12px}
+
+/* Keep the line breaks and blank lines the admin typed. */
+#sheettext,#prompt,#sheet p.hint,.cluelist li p,.suspectlist span,#reveal .lead{white-space:pre-line}

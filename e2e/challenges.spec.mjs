@@ -168,3 +168,32 @@ test("a challenge with no hint and no picture shows neither, and no stray text",
   await answer(page, MC, 0);
   await expectNoVerdict(page);
 });
+
+test("line breaks typed by the organiser are kept on every screen", async ({ app, page }) => {
+  const game = structuredClone(GAME);
+  const thk = game.locations.find(l => l.id === THK.id);
+  thk.arrivalText = "First paragraph.\n\nSecond paragraph,\nwith a second line.";
+  thk.tasks[0].prompt = "Line one of the question.\nLine two.";
+  thk.tasks[0].hint = "Hint line one.\nHint line two.";
+  game.clues[0].text = "Clue line one.\nClue line two.";
+  game.suspects[0].blurb = "Blurb one.\nBlurb two.";
+  game.locations = [thk];                                        // finishing the only location brings the clues forward
+  const html = readFileSync(PLAY_FILE, "utf8").replace(/Pack\.open\("cth1\.[^"]+"\)/, () => `Pack.open(${JSON.stringify(Pack.seal(game))})`);
+  await app.open({ file: "play", html, pins: 1 });
+  await app.begin(far(GAME.locations));
+  for (let i = 0; i < 3; i++) await app.fix(offset(THK, 1, i * 120));
+  const lines = locator => locator.evaluate(el => el.innerText.split("\n"));
+
+  expect(await lines(page.locator("#sheettext"))).toEqual(["First paragraph.", "", "Second paragraph,", "with a second line."]);
+  await page.locator("#stageBtn").click();
+  expect(await lines(page.locator("#prompt"))).toEqual(["Line one of the question.", "Line two."]);
+  await page.locator("#hintBtn").click();
+  expect(await lines(page.locator("#hintText"))).toEqual(["Hint: Hint line one.", "Hint line two."]);
+
+  await answer(page, MC, 0);
+  await answer(page, NUM, 1);
+  await answer(page, TXT, "x");
+  await page.locator("#stageBtn").click();                       // See the clues
+  expect(await lines(page.locator("#clueList li p").first())).toEqual(["Clue line one.", "Clue line two."]);
+  expect(await lines(page.locator("#suspectList li span").first())).toEqual(["Blurb one.", "Blurb two."]);
+});
