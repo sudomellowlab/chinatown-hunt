@@ -95,10 +95,9 @@ first.
 - 119 unit tests and 52 browser tests, run by CI on every push.
 
 **Not built yet**
-1. **Step 3 — the starting location.** One location marked as the start; the rest of the
-   map stays locked until it is finished. Right now any location can be done first.
-2. **Step 4 — clues, suspects, deduction screen and end screen.**
-3. **Real content.** All eight locations still hold placeholder coordinates and
+1. **Step 4 — clues, suspects, deduction screen and end screen.** (A "starting location"
+   step was planned and then dropped: every location is open from the start.)
+2. **Real content.** All eight locations still hold placeholder coordinates and
    placeholder challenges.
 
 **Untested in the real world**
