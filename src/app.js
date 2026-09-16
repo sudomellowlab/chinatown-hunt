@@ -112,7 +112,7 @@ function onFix(fix, src = feed.source){
   fix = { ...fix, t: fix.t ?? Date.now() };
   state.fix = fix; state.fixes++;
 
-  const out = Engine.ingest(fix, Play.openable(GAME.locations, state.progress), state.cfg,
+  const out = Engine.ingest(fix, Play.openable(GAME.locations, state.progress, revealDue()), state.cfg,
     { streaks:state.streaks, opened:openedIds(), nearSince:state.nearSince });
   state.streaks = out.streaks;
   state.nearSince = out.nearSince;
@@ -125,12 +125,19 @@ function onFix(fix, src = feed.source){
   render(out);
 }
 
+// Time left on the team's clock, or null before Begin.
+function msLeft(){
+  return state.startedAt ? state.clockMinutes * 60000 - (Date.now() - state.startedAt) : null;
+}
+const revealDue = () => Play.revealDue(GAME, state.progress, msLeft());
+
 // Open a location: it becomes the team's active location until every challenge is answered.
 function activateLocation(id){
+  if (revealDue() && !state.progress.active) return false;
   const next = Play.activate(state.progress, id);
   if (next === state.progress) return false;
   state.progress = next;
-  ui.feedback = null; ui.choice = null;
+  ui.saved = false; ui.choice = null;
   styleLocation(id); save(); renderSheet(); render();
   if (navigator.vibrate) { try{ navigator.vibrate([40,60,40]); }catch(e){} }
   return true;
@@ -163,17 +170,16 @@ const $ = id => document.getElementById(id);
 
 function render(out){
   const cfg = state.cfg, p = state.progress;
-  const ranges = out?.ranges || (state.fix ? Engine.ranges(state.fix, Play.openable(GAME.locations, p), cfg) : []);
+  const closed = revealDue();
+  const ranges = out?.ranges || (state.fix ? Engine.ranges(state.fix, Play.openable(GAME.locations, p, closed), cfg) : []);
   const active = p.active && locationById(p.active);
-  const next = active ? null : ranges.find(g => !p.completed.includes(g.id));
-  const allDone = p.completed.length === GAME.locations.length;
+  const next = active || closed ? null : ranges.find(g => !p.completed.includes(g.id));
 
-  $("targetLabel").textContent = active ? "you are at" : allDone ? "" : "nearest location";
-  $("target").textContent = active ? active.name : next ? next.name : allDone ? "All locations complete" : "—";
+  $("targetLabel").textContent = active ? "you are at" : closed ? "" : "nearest location";
+  $("target").textContent = active ? active.name : closed ? "Time for the clues" : next ? next.name : "—";
   $("metres").textContent = next && state.fix ? Math.round(next.d) : "—";
   $("reached").textContent = p.completed.length;
   $("total").textContent = GAME.locations.length;
-  $("score").textContent = Play.totalScore(p);
   $("acc").textContent = state.fix ? Math.round(state.fix.accuracy) : "—";
   $("fixcount").textContent = state.fixes;
 
@@ -185,7 +191,7 @@ function render(out){
   $("srcdot").className = "dot " + status.dot;
   $("srctxt").textContent = status.text;
 
-  // override button: never while a location is in progress
+  // override button: never while a location is in progress, nor once the clues are due
   const ob = $("override");
   const eligible = next && state.overrideReady.includes(next.id);
   ob.classList.toggle("show", !!eligible);
@@ -200,7 +206,7 @@ function renderClock(){
   const h = Math.floor(left/3600000), m = Math.floor(left%3600000/60000), s = Math.floor(left%60000/1000);
   $("clock").textContent = `${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
 }
-setInterval(renderClock, 1000); renderClock();
+setInterval(() => { renderClock(); checkReveal(); }, 1000); renderClock();
 
 /* ════════════════════════════════════════════════════════════════════
    LOCATION SHEET — arrival text, then each challenge in order, then a
@@ -209,7 +215,7 @@ setInterval(renderClock, 1000); renderClock();
    ════════════════════════════════════════════════════════════════════ */
 const ui = {
   startScreen: true,     // the admin file turns this off
-  feedback: null,        // { task, result } just after an answer, until Next is tapped
+  saved: false,          // an answer was just recorded: say so, neutrally, on the next screen
   choice: null,          // selected option index for the current multiple-choice challenge
 };
 
@@ -224,7 +230,6 @@ function h(tag, props = {}, ...children){
   for (const c of children.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : String(c));
   return el;
 }
-const pts = n => `${n} point${n === 1 ? "" : "s"}`;
 
 function renderSheet(){
   const l = state.progress.active && locationById(state.progress.active);
@@ -233,22 +238,16 @@ function renderSheet(){
   const body = $("stage");
   $("sheetname").textContent = l.name;
 
-  if (ui.feedback) {
-    const { task, result } = ui.feedback;
-    const more = !!Play.nextTask(l, state.progress);
-    $("sheetplace").textContent = "your answer";
-    body.replaceChildren(
-      h("div", { id:"feedback", class: result.correct ? "right" : "wrong" },
-        result.correct ? `Correct! +${pts(result.points)}` : "Not quite. 0 points."),
-      h("button", { id:"stageBtn", class:"primary", onclick: () => { ui.feedback = null; renderSheet(); } },
-        more ? "Next challenge" : "See your score"),
-    );
-  } else if (stage.kind === "arrival") {
+  const savedNote = ui.saved ? h("p", { id:"savedNote", class:"small" }, "Answer saved.") : null;
+  const closingNote = revealDue()
+    ? h("p", { id:"closingNote", class:"hint" }, "Time is nearly up. Finish this location to see the clues.") : null;
+  if (stage.kind === "arrival") {
     $("sheetplace").textContent = "you have arrived";
     const n = (l.tasks || []).length;
     body.replaceChildren(
       h("p", { id:"sheettext" }, l.arrivalText || ""),
       h("p", { class:"small" }, n ? `${n} challenge${n === 1 ? "" : "s"} here. One answer each, and you finish this location before moving on.` : ""),
+      closingNote,
       h("button", { id:"stageBtn", class:"primary", onclick: () => {
         state.progress = Play.startChallenges(state.progress, l.id); save(); renderSheet();
       } }, n ? "Start the challenges" : "Continue"),
@@ -256,7 +255,6 @@ function renderSheet(){
   } else if (stage.kind === "task") {
     const { task, index, total, hintShown } = stage;
     $("sheetplace").textContent = `challenge ${index + 1} of ${total}`;
-    const worth = Play.worth(task, hintShown);
     const submit = h("button", { id:"stageBtn", class:"primary", disabled:true, onclick: () => submitAnswer(readResponse(task)) }, "Submit answer");
     let answerArea;
     if (task.type === "multiple_choice") {
@@ -279,19 +277,23 @@ function renderSheet(){
           ? h("p", { id:"hintText", class:"hint" }, `Hint: ${task.hint}`)
           : h("button", { id:"hintBtn", class:"secondary", onclick: () => {
               state.progress = Play.revealHint(state.progress, task.id); save(); renderSheet();
-            } }, `Show hint (−${pts(Math.min(Play.hintPenaltyFor(task), Play.pointsFor(task)))})`))
+            } }, "Show hint"))
       : null;
     body.replaceChildren(
+      savedNote, closingNote,
       h("p", { id:"prompt", class:"prompt" }, task.prompt),
-      h("p", { class:"small" }, `Worth ${pts(worth)}. One try only.`),
+      h("p", { class:"small" }, "One answer only. Check it before you submit."),
       answerArea, hintArea, submit,
     );
   } else {
     $("sheetplace").textContent = "location complete";
+    // Judged as if this location were already finished, so the last one leads straight to the clues.
+    const due = Play.revealDue(GAME, Play.finish(state.progress, l), msLeft());
     body.replaceChildren(
-      h("p", { id:"summary", class:"prompt" }, `${stage.correct} of ${stage.total} right · ${pts(stage.score)} here`),
-      h("p", { class:"small" }, `Your total is now ${pts(Play.totalScore(state.progress))}.`),
-      h("button", { id:"stageBtn", class:"primary", onclick: finishActive }, "Back to the map"),
+      savedNote,
+      h("p", { id:"summary", class:"prompt" }, "You've finished this location."),
+      h("p", { class:"small" }, due ? "Time for the clues." : "Head for your next location."),
+      h("button", { id:"stageBtn", class:"primary", onclick: finishActive }, due ? "See the clues" : "Back to the map"),
     );
   }
   $("sheet").classList.add("up");
@@ -302,23 +304,53 @@ function readResponse(task){
   return $("answerInput")?.value ?? "";
 }
 
-// Record the one answer to the current challenge and show whether it was right.
+// Record the one answer to the current challenge and move on. Whether it was right is never shown.
 function submitAnswer(response){
-  const l = locationById(state.progress.active); if (!l) return null;
-  const next = Play.nextTask(l, state.progress); if (!next) return null;
-  const { progress, result } = Play.answer(state.progress, next.task, response);
-  state.progress = progress;
-  ui.feedback = { task: next.task, result }; ui.choice = null;
+  const l = locationById(state.progress.active); if (!l) return false;
+  const next = Play.nextTask(l, state.progress); if (!next) return false;
+  state.progress = Play.answer(state.progress, next.task, response, Date.now()).progress;
+  ui.saved = true; ui.choice = null;
   save(); renderSheet(); render();
-  return result;
+  return true;
 }
 
 function finishActive(){
   const l = locationById(state.progress.active); if (!l) return;
   const next = Play.finish(state.progress, l);
   if (next === state.progress) return;
-  state.progress = next; ui.feedback = null;
+  state.progress = next; ui.saved = false;
   styleLocation(l.id); save(); renderSheet(); render();
+  checkReveal();
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CLUES & SUSPECTS — shown on one screen from the reveal point on the
+   team's clock (or once every location is done), after any location in
+   progress is finished. It stays for the rest of the game.
+   ════════════════════════════════════════════════════════════════════ */
+function checkReveal(){
+  const next = Play.reveal(GAME, state.progress, msLeft());
+  if (next !== state.progress) {
+    state.progress = next; ui.saved = false;
+    save(); stopReal(); renderSheet(); render();
+    if (navigator.vibrate) { try{ navigator.vibrate([60,80,60]); }catch(e){} }
+  } else if (!state.progress.revealed && revealDue()) {
+    render();                         // closing: the HUD and sheet say the clues are coming
+    // Add the note in place rather than re-rendering, so a half-typed answer isn't lost.
+    if (state.progress.active && !$("closingNote") && $("sheet").classList.contains("up"))
+      $("stage").prepend(h("p", { id:"closingNote", class:"hint" }, "Time is nearly up. Finish this location to see the clues."));
+  }
+  renderReveal();
+}
+// preview: the admin file can show the screen without changing the team's progress.
+function renderReveal(preview = false){
+  const show = state.progress.revealed || preview;
+  $("reveal").hidden = !show;
+  if (!show) return;
+  $("revealTitle").textContent = GAME.title;
+  $("clueList").replaceChildren(...(GAME.clues || []).map(c => h("li", {}, c.text)));
+  $("suspectList").replaceChildren(...(GAME.suspects || []).map(s =>
+    h("li", {}, h("strong", {}, s.name), s.blurb ? h("span", {}, s.blurb) : null)));
 }
 
 $("override").onclick = e => {
@@ -369,7 +401,8 @@ function hideStart(){ $("start").hidden = true; }
 $("startBtn").onclick = () => {
   if (!state.startedAt) { state.startedAt = Date.now(); save(); renderClock(); }
   hideStart();
-  startReal();
+  checkReveal();
+  if (!state.progress.revealed) startReal();      // the clues screen needs no location
 };
 
 /* ════════════════════════════════════════════════════════════════════
@@ -390,8 +423,9 @@ wake();
 document.title = GAME.title;
 render();
 renderSheet();          // a reload mid-location goes straight back to it
+renderReveal();
 showStart();
 
 export { BUILD, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing, styleLocation,
-  $, render, renderClock, renderSheet, activateLocation, submitAnswer, finishActive, locationById,
+  $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, submitAnswer, finishActive, locationById,
   startReal, stopReal, hideStart };

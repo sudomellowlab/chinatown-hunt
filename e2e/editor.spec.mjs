@@ -42,8 +42,7 @@ async function addChallenge(page, t) {
     await page.locator("#tfAnswer").fill(String(t.answer));
     if (t.tolerance) await page.locator("#tfTolerance").fill(String(t.tolerance));
   }
-  await page.locator("#tfPoints").fill(String(t.points));
-  if (t.hint) { await page.locator("#tfHint").fill(t.hint); await page.locator("#tfHintPenalty").fill(String(t.hintPenalty)); }
+  if (t.hint) await page.locator("#tfHint").fill(t.hint);
   await page.locator("#tfSave").click();
   await expect(page.locator("#taskForm")).toBeHidden();
 }
@@ -59,9 +58,9 @@ async function exportGame(page) {
 }
 
 const NEW = [
-  { type: "text", prompt: "What is the temple's name in English?", accept: ["Temple of Heavenly Happiness", "heavenly happiness"], points: 40 },
-  { type: "number", prompt: "How many doors does the main hall have?", answer: 3, tolerance: 0, points: 70, hint: "Count them from the courtyard.", hintPenalty: 30 },
-  { type: "multiple_choice", prompt: "Which material are the pillars?", options: ["Granite", "Teak", "Brick"], answer: 0, points: 90 },
+  { type: "text", prompt: "What is the temple's name in English?", accept: ["Temple of Heavenly Happiness", "heavenly happiness"] },
+  { type: "number", prompt: "How many doors does the main hall have?", answer: 3, tolerance: 0, hint: "Count them from the courtyard." },
+  { type: "multiple_choice", prompt: "Which material are the pillars?", options: ["Granite", "Teak", "Brick"], answer: 0 },
 ];
 
 test("build challenges of every type, reorder them, and a phone plays them in that order", async ({ page, browser }) => {
@@ -101,10 +100,10 @@ test("build challenges of every type, reorder them, and a phone plays them in th
       if (t.type === "multiple_choice") await phonePage.locator(".opt").nth(t.answer).click();
       else await phonePage.locator("#answerInput").fill(t.type === "text" ? t.accept[1] : String(t.answer));
       await phonePage.locator("#stageBtn").click();
-      await expect(phonePage.locator("#feedback")).toHaveText(`Correct! +${t.points} points`);
-      await phonePage.locator("#stageBtn").click();
     }
-    await expect(phonePage.locator("#summary")).toHaveText(`3 of 3 right · ${40 + 70 + 90} points here`);
+    await expect(phonePage.locator("#summary")).toHaveText("You've finished this location.");
+    const saved = await phonePage.evaluate(() => JSON.parse(localStorage.getItem("chinatown-hunt:chinatown-historical-hunt")).progress.answers);
+    expect(Object.values(saved).map(a => a.correct)).toEqual([true, true, true]);
     done();
   } finally {
     await phone.close();
@@ -124,10 +123,11 @@ test("editing a challenge keeps its place and id; Cancel changes nothing", async
 
   await items(page).nth(1).locator(".tedit").click();
   await page.locator("#tfPrompt").fill("Count the lions. Carefully.");
-  await page.locator("#tfPoints").fill("120");
+  await page.locator("#tfHint").fill("");
   await page.locator("#tfSave").click();
   await expect(prompts(page).nth(1)).toHaveText("Count the lions. Carefully.");
-  await expect(items(page).nth(1).locator(".tpts")).toHaveText("120 pts");
+  await expect(items(page).nth(1).locator(".tpts")).toHaveText("");
+  await expect(page.locator("#tfPoints, #tfHintPenalty")).toHaveCount(0);
   expect(await draftIds()).toEqual(THK.tasks.map(t => t.id));
 });
 

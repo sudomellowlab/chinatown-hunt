@@ -96,14 +96,11 @@ body.dev #strip{top:30px;padding-top:7px}
 #sheet .opt{margin:0;text-align:left;background:var(--linen);color:var(--ink);border:1.5px solid var(--ink)}
 #sheet .opt[aria-checked="true"]{background:var(--ink);color:var(--sheet)}
 #sheet .answer input{width:100%;font-family:var(--serif);font-size:20px;padding:13px 12px;min-height:52px;border:1.5px solid var(--ink);background:#fff;color:var(--ink)}
-#feedback{font-size:24px;font-weight:600;padding:18px 16px;margin:4px 0 8px;border-left:5px solid}
-#feedback.right{color:var(--jade);border-color:var(--jade);background:rgba(46,107,94,.08)}
-#feedback.wrong{color:var(--mark);border-color:var(--mark);background:rgba(158,43,20,.06)}
 .pin.active{background:var(--brass);border-color:var(--brass);color:#FFF8E6}
 
 /* ---------- dev drawer ---------- */
 #devbtn{
-  position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 142px);z-index:850;   /* above the location sheet */
+  position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 142px);z-index:870;   /* above the location sheet and the clues screen */
   width:46px;height:46px;border-radius:50%;border:1px solid var(--ink);
   background:var(--linen);font-size:11px;letter-spacing:.03em;
 }
@@ -233,3 +230,24 @@ details.more{margin-top:12px}
 details.more summary{cursor:pointer;font-size:13px;color:var(--slate)}
 /* While a location sheet is up, keep the admin button clear of the answers. */
 body:has(#sheet.up) #devbtn{bottom:auto;top:calc(env(safe-area-inset-top) + 80px)}
+
+/* ---------- clues & suspects ---------- */
+#reveal{position:fixed;inset:0;z-index:860;background:var(--linen);overflow:auto;overscroll-behavior:contain}
+#reveal .revealcard{max-width:640px;margin:0 auto;min-height:100%;background:var(--sheet);border-left:1px solid var(--linen-deep);border-right:1px solid var(--linen-deep);
+  padding:calc(env(safe-area-inset-top) + 0px) 22px calc(env(safe-area-inset-bottom) + 32px)}
+#reveal .rule{height:9px;margin:0 -22px 20px;border-bottom:1px solid var(--ink);background:repeating-linear-gradient(90deg,var(--ink) 0 1px,transparent 1px 13px)}
+#reveal .place{font-size:12px;color:var(--mark);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
+#reveal h1{font-size:28px;line-height:1.1;margin:0 0 12px;font-weight:600}
+#reveal h2{font-size:19px;margin:26px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--ink);font-weight:600}
+#reveal .lead{font-size:16px;line-height:1.55;margin:0}
+.cluelist{margin:0;padding-left:26px}
+.cluelist li{font-size:17px;line-height:1.55;margin:0 0 12px;padding-left:4px}
+.suspectlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.suspectlist li{border:1.5px solid var(--ink);background:var(--linen);padding:12px 14px}
+.suspectlist strong{display:block;font-size:18px}
+.suspectlist span{display:block;font-size:15px;line-height:1.45;color:var(--slate);margin-top:3px}
+#revealClose{width:100%;margin:14px 0 0}
+#timingInfo:empty{display:none}
+#clueEdit li,#suspectEdit li{display:flex;flex-direction:column;gap:6px}
+#clueEdit .prose,#suspectEdit .prose{width:100%;margin:0;border:1px solid var(--ink);background:var(--sheet);padding:8px}
+#suspectEdit input.prose{font-weight:600;min-height:38px}

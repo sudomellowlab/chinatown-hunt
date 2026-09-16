@@ -2,6 +2,7 @@
 // navigator.geolocation.watchPosition path with Playwright's geolocation emulation.
 // The emulator in the dev drawer is deliberately not used for positions.
 import { test, expect, CEILING, offset, pickArrival, pickLoiter, far } from "./fixtures.mjs";
+import { GAME } from "../src/game.js";
 
 /* ── tests ─────────────────────────────────────────────────────────────── */
 
@@ -157,13 +158,14 @@ test("engine settings come from GAME.defaults, not the drawer's slider positions
   await expect(page.locator("#log .rej").first()).toContainText("over 20m ceiling");
 });
 
-test("the countdown carries on across a reload instead of restarting", async ({ app, page }) => {
-  await app.open();
+test("a participant's countdown carries on across a reload instead of restarting", async ({ app, page }) => {
+  await app.open({ file: "play" });
+  await app.begin(far(GAME.locations));
   await expect(page.locator("#clock")).toHaveText(/^(2:00:00|1:59:5\d)$/);
 
   // Pretend the game started ten minutes ago, then reload.
   await page.evaluate(() => {
-    const k = Object.keys(localStorage).find(key => key.startsWith("chinatown-hunt-admin:")), d = JSON.parse(localStorage.getItem(k));
+    const k = "chinatown-hunt:chinatown-historical-hunt", d = JSON.parse(localStorage.getItem(k));
     d.startedAt = Date.now() - 10 * 60_000;
     localStorage.setItem(k, JSON.stringify(d));
   });

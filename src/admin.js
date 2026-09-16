@@ -5,7 +5,7 @@ import { Play } from "./play.js";
 import { Pack } from "./pack.js";
 import { GAME } from "./game.js";
 import { store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing, styleLocation,
-  $, render, renderClock, renderSheet, activateLocation, submitAnswer, finishActive, locationById,
+  $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, submitAnswer, finishActive, locationById,
   startReal, stopReal, hideStart } from "./app.js";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -19,8 +19,9 @@ const ADMIN_KEY = "chinatown-hunt-m1";          // where earlier versions kept e
 ui.startScreen = false; hideStart();
 document.body.classList.add("dev");
 document.title = `${GAME.title} · Admin`;
-// Testing in the admin file runs the clock from first load, as the field rig always has.
-if (!state.startedAt) { state.startedAt = Date.now(); save(); renderClock(); }
+// Testing in the admin file runs the clock from each load, so an old test session never
+// opens straight onto the clues screen. Reset progress restarts it too.
+state.startedAt = Date.now(); save(); renderClock();
 
 /* ════════════════════════════════════════════════════════════════════
    THE DRAFT — the game as the admin is building it: locations, radii,
@@ -45,6 +46,10 @@ function applyContent(game){
     pins[live.id].setLatLng([live.lat, live.lng]);
     rings[live.id].setLatLng([live.lat, live.lng]).setRadius(Engine.radiusOf(live, state.cfg));
   }
+  // Drafts saved before clues & timing existed keep the defaults for those.
+  for (const k of ["durationMinutes", "revealMinutes"]) if (Number.isFinite(game[k])) GAME[k] = game[k];
+  for (const k of ["clues", "suspects"]) if (Array.isArray(game[k])) GAME[k] = structuredClone(game[k]);
+  state.clockMinutes = GAME.durationMinutes;
   map.fitBounds(GAME.locations.map(l => [l.lat, l.lng]), { padding:[40, 40], maxZoom:18 });
 }
 function saveDraft(){
@@ -131,7 +136,7 @@ function renderState(ranges){
     `acc    ${f ? "±"+Math.round(f.accuracy)+" m" : "—"}\n` +
     `source ${feed.source}${feed.frozen ? " (frozen)" : ""}\n` +
     `fixes  ${state.fixes}\n` +
-    `done   ${state.progress.completed.length} / ${GAME.locations.length}   active ${state.progress.active || "—"}   score ${Play.totalScore(state.progress)}\n` +
+    `done   ${state.progress.completed.length} / ${GAME.locations.length}   active ${state.progress.active || "—"}   ${state.progress.revealed ? "clues shown" : ""}\n` +
     `ceil   ${state.cfg.accuracyCeiling} m   streak ${state.cfg.consecutiveFixes}   radius ${state.cfg.radius} m\n\n` +
     (ranges||[]).slice(0,4).map(g =>
       `${state.progress.completed.includes(g.id) ? "●" : "○"} ${g.name.padEnd(24).slice(0,24)} ${String(Math.round(g.d)).padStart(5)}m  ${(state.streaks[g.id]||0)}/${state.cfg.consecutiveFixes}`
@@ -289,7 +294,8 @@ slider("defRad",   v => v+" m",  v => {
 }, state.cfg.radius);
 slider("capRad",   v => v+" m",  v => setPoi(capSel.value, { radius:+v }),
   Engine.radiusOf(GAME.locations.find(l => l.id === capSel.value) || {}, state.cfg));
-slider("clockSet", v => v+" min", v => { state.clockMinutes = +v; state.startedAt = Date.now(); renderClock(); }, state.clockMinutes);
+$("clockSet").max = Math.max(GAME.durationMinutes, 1);
+slider("clockSet", v => v+" min", v => { state.clockMinutes = +v; state.startedAt = Date.now(); renderClock(); checkReveal(); }, state.clockMinutes);
 
 $("blowAcc").onclick = () => {
   const p = sim.at || map.getCenter();
@@ -308,7 +314,6 @@ function correctResponse(task){
 }
 $("solveOne").onclick = () => {
   const l = locationById(state.progress.active); if (!l) { alert("No location is open."); return; }
-  if (ui.feedback) { ui.feedback = null; renderSheet(); }
   let p = Play.stage(l, state.progress);
   if (p.kind === "arrival") { state.progress = Play.startChallenges(state.progress, l.id); p = Play.stage(l, state.progress); }
   if (p.kind === "task") submitAnswer(correctResponse(p.task));
@@ -317,13 +322,13 @@ $("solveAll").onclick = () => {
   const l = locationById(state.progress.active); if (!l) { alert("No location is open."); return; }
   state.progress = Play.startChallenges(state.progress, l.id);
   for (let n = Play.nextTask(l, state.progress); n; n = Play.nextTask(l, state.progress)) submitAnswer(correctResponse(n.task));
-  ui.feedback = null;
   finishActive();
 };
 $("reset").onclick = () => {
   if (!confirm("Clear all game progress? Location edits and the walk recording are kept.")) return;
   clearProgress();
-  state.startedAt = Date.now(); save(); renderClock();
+  state.clockMinutes = GAME.durationMinutes; $("clockSet").value = state.clockMinutes; $("clockSetO").textContent = state.clockMinutes + " min";
+  state.startedAt = Date.now(); save(); renderClock(); renderReveal();
 };
 
 /* ════════════════════════════════════════════════════════════════════
@@ -467,6 +472,8 @@ function gameForExport(){
   game.locations = GAME.locations.map(l => {
     const out = { ...l };
     if (out.radius == null) delete out.radius;
+    // No points on this site: drop scoring fields left over from earlier drafts.
+    out.tasks = (l.tasks || []).map(({ points, hintPenalty, ...t }) => t);
     return out;
   });
   return game;
@@ -543,7 +550,7 @@ function renderTasks(){
       <div class="tbtns"><button class="btn tup" title="Move up">↑</button><button class="btn tdown" title="Move down">↓</button><button class="btn tedit">Edit</button><button class="btn warn tdel">Delete</button></div>`;
     li.querySelector(".tnum").textContent = i + 1;
     li.querySelector(".ttype").textContent = TYPE_LABELS[t.type] || t.type;
-    li.querySelector(".tpts").textContent = `${Play.pointsFor(t)} pts`;
+    li.querySelector(".tpts").textContent = t.hint ? "hint" : "";
     li.querySelector(".tprompt").textContent = t.prompt || "(no question yet)";
     li.querySelector(".tprob").textContent = problems.join(" · ");
     li.querySelector(".tup").disabled = i === 0;
@@ -580,7 +587,7 @@ function deleteTask(l, i){
 // The form works on a copy; nothing changes until Save succeeds.
 function openTaskForm(l, index){
   const t = index >= 0 ? structuredClone(l.tasks[index])
-    : { type:"multiple_choice", prompt:"", options:["", ""], answer:null, points:Play.DEFAULT_POINTS, hint:"", hintPenalty:Play.DEFAULT_HINT_PENALTY };
+    : { type:"multiple_choice", prompt:"", options:["", ""], answer:null, hint:"" };
   editing = { locId: l.id, index };
   $("tfTitle").textContent = index >= 0 ? `Edit challenge ${index + 1}` : "New challenge";
   $("tfType").value = t.type;
@@ -589,9 +596,7 @@ function openTaskForm(l, index){
   $("tfAccept").value = (t.accept || []).join("\n");
   $("tfAnswer").value = t.type === "number" && t.answer != null ? t.answer : "";
   $("tfTolerance").value = t.type === "number" && t.tolerance ? t.tolerance : "";
-  $("tfPoints").value = Play.pointsFor(t);
   $("tfHint").value = t.hint || "";
-  $("tfHintPenalty").value = Play.hintPenaltyFor(t);
   $("tfErrors").textContent = "";
   showTypeFields();
   $("taskForm").hidden = false; $("taskAdd").hidden = true;
@@ -629,7 +634,7 @@ function readOptions(){
 function readTaskForm(){
   const type = $("tfType").value;
   const num = (v, fallback) => v.trim() === "" ? fallback : Number(v);
-  const t = { type, prompt: $("tfPrompt").value.trim(), points: num($("tfPoints").value, Play.DEFAULT_POINTS) };
+  const t = { type, prompt: $("tfPrompt").value.trim() };
   if (type === "multiple_choice") {
     const { options, correct } = readOptions();
     t.options = options.map(o => o.trim());
@@ -641,7 +646,7 @@ function readTaskForm(){
     t.tolerance = num($("tfTolerance").value, 0);
   }
   const hint = $("tfHint").value.trim();
-  if (hint) { t.hint = hint; t.hintPenalty = num($("tfHintPenalty").value, Play.DEFAULT_HINT_PENALTY); }
+  if (hint) t.hint = hint;
   return t;
 }
 
@@ -655,10 +660,92 @@ $("tfSave").onclick = () => {
   const problems = Play.validateTask(t);
   if (problems.length) { $("tfErrors").textContent = "Can't save yet: " + problems.join(" · "); return; }
   l.tasks = l.tasks || [];
-  if (editing.index >= 0) l.tasks[editing.index] = { id: l.tasks[editing.index].id, ...t };
+  if (editing.index >= 0) l.tasks[editing.index] = { id: l.tasks[editing.index].id, ...t };   // old points fields are dropped
   else l.tasks.push({ id: Play.newTaskId(GAME), ...t });
   closeTaskForm(); saveDraft(); renderTasks();
 };
+
+/* ════════════════════════════════════════════════════════════════════
+   CLUES & SUSPECTS — the game length, when the clues appear, and the two
+   lists. Every field saves as you type; ↑ ↓ set the order they're shown in.
+   ════════════════════════════════════════════════════════════════════ */
+function wholeNumber(v){ return v.trim() === "" ? NaN : Number(v); }
+function renderMystery(){
+  const d = $("durationEdit"), r = $("revealEdit");
+  if (document.activeElement !== d) d.value = GAME.durationMinutes;
+  if (document.activeElement !== r) r.value = GAME.revealMinutes;
+  const ok = Number.isInteger(GAME.durationMinutes) && Number.isInteger(GAME.revealMinutes) && GAME.revealMinutes <= GAME.durationMinutes;
+  $("timingInfo").textContent = ok
+    ? `Each team's clock starts when they tap Begin. Clues appear ${GAME.durationMinutes - GAME.revealMinutes} minutes in, or as soon as a team has finished every location.`
+    : "";
+  editableList("clueEdit", "clueCount", GAME.clues, "clue", c => [
+    field("textarea", c.text, "What the teams read", v => { c.text = v; }),
+  ]);
+  editableList("suspectEdit", "suspectCount", GAME.suspects, "suspect", s => [
+    field("input", s.name, "Name", v => { s.name = v; }),
+    field("textarea", s.blurb || "", "One line about them (optional)", v => { s.blurb = v; }),
+  ]);
+}
+function field(tag, value, placeholder, set){
+  const el = document.createElement(tag);
+  if (tag === "input") el.type = "text"; else el.rows = 2;
+  el.className = "prose"; el.value = value; el.placeholder = placeholder;
+  el.addEventListener("input", () => { set(el.value); saveDraft(); });
+  return el;
+}
+// A list of rows, each with its fields, ↑ ↓ and Delete. Rebuilt on add, move and delete only.
+function editableList(listId, countId, items, noun, fields){
+  $(countId).textContent = items.length ? `${items.length}, shown in this order` : "none yet";
+  const list = $(listId);
+  if (list.dataset.n === String(items.length) && list.dataset.ids === items.map(x => x.id).join()) return;   // keep focus while typing
+  list.dataset.n = items.length; list.dataset.ids = items.map(x => x.id).join();
+  list.replaceChildren(...items.map((item, i) => {
+    const li = document.createElement("li");
+    li.dataset.id = item.id;
+    const btns = document.createElement("div");
+    btns.className = "tbtns";
+    btns.innerHTML = `<button class="btn tup" title="Move up">↑</button><button class="btn tdown" title="Move down">↓</button><button class="btn warn tdel">Delete</button>`;
+    btns.querySelector(".tup").disabled = i === 0;
+    btns.querySelector(".tdown").disabled = i === items.length - 1;
+    const move = dir => { [items[i], items[i + dir]] = [items[i + dir], items[i]]; saveDraft(); renderMystery(); };
+    btns.querySelector(".tup").onclick = () => move(-1);
+    btns.querySelector(".tdown").onclick = () => move(+1);
+    btns.querySelector(".tdel").onclick = () => {
+      if (!confirm(`Delete ${noun} ${i + 1}?`)) return;
+      items.splice(i, 1); saveDraft(); renderMystery();
+    };
+    li.append(...fields(item), btns);
+    return li;
+  }));
+}
+function addItem(key, prefix, blank){
+  const all = [...(GAME.clues || []), ...(GAME.suspects || [])].map(x => x.id);
+  GAME[key] = GAME[key] || [];
+  GAME[key].push({ id: Play.newId(prefix, all), ...blank });
+  saveDraft(); renderMystery();
+  $(key === "clues" ? "clueEdit" : "suspectEdit").querySelector("li:last-child .prose")?.focus();
+}
+$("clueAdd").onclick = () => addItem("clues", "c", { text: "" });
+$("suspectAdd").onclick = () => addItem("suspects", "s", { name: "", blurb: "" });
+for (const [id, key] of [["durationEdit", "durationMinutes"], ["revealEdit", "revealMinutes"]]) {
+  $(id).addEventListener("input", e => {
+    GAME[key] = wholeNumber(e.target.value);
+    if (key === "durationMinutes" && Number.isInteger(GAME[key]) && GAME[key] > 0) {
+      $("clockSet").max = GAME[key];
+      state.clockMinutes = GAME[key]; $("clockSet").value = GAME[key]; $("clockSetO").textContent = GAME[key] + " min";
+      state.startedAt = Date.now(); save(); renderClock();
+    }
+    saveDraft(); renderMystery(); checkReveal();
+  });
+}
+
+// Preview the clues screen as teams will see it, without touching this session's progress.
+const previewClose = document.createElement("button");
+previewClose.id = "revealClose"; previewClose.className = "btn primary"; previewClose.hidden = true;
+previewClose.textContent = "Close preview (admin)";
+$("reveal").querySelector(".revealcard").prepend(previewClose);
+$("previewReveal").onclick = () => { renderReveal(true); previewClose.hidden = false; makeRoomForMap(); };
+previewClose.onclick = () => { previewClose.hidden = true; renderReveal(); };
 
 /* ════════════════════════════════════════════════════════════════════
    WALK RECORDER — export
@@ -783,13 +870,13 @@ slider("replaySpeed", v => (SPEEDS[+v] || 1) + "×", () => render());
 // Clears opened locations, streaks and override timers, on screen and in storage.
 function clearProgress(){
   Object.assign(state, { progress: Play.emptyProgress(), streaks:{}, nearSince:{}, overrideReady:[] });
-  ui.feedback = null; ui.choice = null;
+  ui.saved = false; ui.choice = null;
   GAME.locations.forEach(l => styleLocation(l.id));
-  save(); renderSheet(); render();
+  save(); renderSheet(); render(); renderReveal();
 }
 
 /* ════════════════════════════════════════════════════════════════════
    BOOT
    ════════════════════════════════════════════════════════════════════ */
-renderPoi(); renderExport(); setSrcButtons(); renderLog(); render();
+renderPoi(); renderMystery(); renderExport(); setSrcButtons(); renderLog(); render(); checkReveal();
 if (wideScreen.matches) toggleDrawer(true);      // on a computer, open with the tools showing

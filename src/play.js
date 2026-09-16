@@ -1,26 +1,33 @@
 /* ════════════════════════════════════════════════════════════════════
    GAME RULES
-   Pure functions, no DOM, no imports. How challenges are answered and
-   scored, what a team sees next at a location, and which locations can
-   open. The admin tools use the validators; the game uses the rest.
+   Pure functions, no DOM, no imports. How challenges are answered, what
+   a team sees next at a location, which locations can open, and when the
+   clues & suspects are revealed. The admin tools use the validators; the
+   game uses the rest.
 
    Rules (these override SPEC.md):
    - A location's challenges come strictly in order.
-   - One attempt per challenge. Right: its points. Wrong: 0. No retry, no skip.
-   - A hint costs its penalty off that challenge's points, never below 0.
+   - One attempt per challenge. No retry, no skip.
+   - No points on this site (scoring happens in LoQuiz): after answering,
+     nothing is shown; the next challenge appears. Hints are free.
    - Once a location opens, no other location can open until it's finished.
+   - Reveal: from `revealMinutes` before the end of the team's own clock,
+     or once every location is finished, no new location can open. A team
+     part-way through a location finishes it; then the clues & suspects
+     screen shows, and stays.
 
    Progress shape (persisted by the game):
-     { active: locId|null, completed: [locId], answers: { taskId: { correct, points, hint } },
-       hints: { taskId: true }, intro: { locId: true } }
+     { active: locId|null, completed: [locId], answers: { taskId: { correct, hint, at } },
+       hints: { taskId: true }, intro: { locId: true }, revealed: bool }
    Answers are keyed by permanent task id, so a re-uploaded game keeps them.
+   `correct` is recorded but never shown to the team.
    ════════════════════════════════════════════════════════════════════ */
 const Play = {
   TYPES: ["multiple_choice", "text", "number"],
-  DEFAULT_POINTS: 100,
-  DEFAULT_HINT_PENALTY: 25,
+  DEFAULT_DURATION_MINUTES: 120,
+  DEFAULT_REVEAL_MINUTES: 20,
 
-  emptyProgress(){ return { active:null, completed:[], answers:{}, hints:{}, intro:{} }; },
+  emptyProgress(){ return { active:null, completed:[], answers:{}, hints:{}, intro:{}, revealed:false }; },
 
   // Lowercase, strip punctuation and symbols, collapse whitespace. Letters in any script survive.
   normalize(text){
@@ -49,12 +56,6 @@ const Play = {
     }
   },
 
-  pointsFor(task){ return Number.isFinite(task.points) ? Math.max(0, task.points) : Play.DEFAULT_POINTS; },
-  hintPenaltyFor(task){ return Number.isFinite(task.hintPenalty) ? Math.max(0, task.hintPenalty) : Play.DEFAULT_HINT_PENALTY; },
-
-  // What this challenge is still worth, given whether its hint has been revealed.
-  worth(task, hintUsed){ return Math.max(0, Play.pointsFor(task) - (hintUsed ? Play.hintPenaltyFor(task) : 0)); },
-
   // Next unanswered challenge at a location, in order, or null when all are answered.
   nextTask(location, progress){
     const tasks = location.tasks || [];
@@ -65,35 +66,20 @@ const Play = {
   /* What the team should see at their active location:
        arrival  – the arrival text, before the first challenge
        task     – the next challenge
-       summary  – every challenge answered; score for this location */
+       summary  – every challenge answered */
   stage(location, progress){
     const tasks = location.tasks || [];
     const anyAnswered = tasks.some(t => progress.answers[t.id]);
     if (!progress.intro[location.id] && !anyAnswered) return { kind: "arrival" };
     const next = Play.nextTask(location, progress);
     if (next) return { kind: "task", ...next, hintShown: !!progress.hints[next.task.id] };
-    return { kind: "summary", ...Play.locationScore(location, progress) };
-  },
-
-  locationScore(location, progress){
-    let score = 0, max = 0, correct = 0;
-    for (const t of location.tasks || []) {
-      max += Play.pointsFor(t);
-      const a = progress.answers[t.id];
-      if (a) { score += a.points; if (a.correct) correct++; }
-    }
-    return { score, max, correct, total: (location.tasks || []).length };
-  },
-
-  // Every point ever earned, including for challenges since deleted from the game.
-  totalScore(progress){
-    return Object.values(progress.answers).reduce((sum, a) => sum + (a.points || 0), 0);
+    return { kind: "summary", total: tasks.length };
   },
 
   /* ── transitions: each returns a new progress object ── */
 
   activate(progress, locId){
-    if (progress.active || progress.completed.includes(locId)) return progress;
+    if (progress.active || progress.revealed || progress.completed.includes(locId)) return progress;
     return { ...progress, active: locId };
   },
   startChallenges(progress, locId){
@@ -104,12 +90,10 @@ const Play = {
     return { ...progress, hints: { ...progress.hints, [taskId]: true } };
   },
   // One attempt: an already-answered challenge keeps its first answer.
-  answer(progress, task, response){
-    if (progress.answers[task.id]) return { progress, result: progress.answers[task.id], repeated: true };
-    const hint = !!progress.hints[task.id];
-    const correct = Play.isCorrect(task, response);
-    const result = { correct, points: correct ? Play.worth(task, hint) : 0, hint };
-    return { progress: { ...progress, answers: { ...progress.answers, [task.id]: result } }, result, repeated: false };
+  answer(progress, task, response, at = null){
+    if (progress.answers[task.id]) return { progress, repeated: true };
+    const result = { correct: Play.isCorrect(task, response), hint: !!progress.hints[task.id], at };
+    return { progress: { ...progress, answers: { ...progress.answers, [task.id]: result } }, repeated: false };
   },
   // Close the active location once all its challenges are answered.
   finish(progress, location){
@@ -118,9 +102,37 @@ const Play = {
     return { ...progress, active: null, completed };
   },
 
-  // Locations the geofence may open right now: none but the active one while a location is in progress.
-  openable(locations, progress){
+  /* ── the clues & suspects reveal ── */
+
+  durationMs(game){ return (Number.isFinite(game.durationMinutes) ? game.durationMinutes : Play.DEFAULT_DURATION_MINUTES) * 60000; },
+  revealMs(game){ return (Number.isFinite(game.revealMinutes) ? game.revealMinutes : Play.DEFAULT_REVEAL_MINUTES) * 60000; },
+
+  // Has the reveal point been reached? msLeft is what remains on the team's clock (null before Begin).
+  revealDue(game, progress, msLeft){
+    if (progress.revealed) return true;
+    if (game.locations.length && game.locations.every(l => progress.completed.includes(l.id))) return true;
+    return msLeft != null && msLeft <= Play.revealMs(game);
+  },
+  /* Where the game is:
+       play     – locations can open
+       closing  – reveal is due, but the team is finishing its current location
+       reveal   – the clues & suspects screen */
+  phase(game, progress, msLeft){
+    if (progress.revealed) return "reveal";
+    if (!Play.revealDue(game, progress, msLeft)) return "play";
+    return progress.active ? "closing" : "reveal";
+  },
+  // Mark the reveal as shown, once it's due and no location is in progress. It then stays.
+  reveal(game, progress, msLeft){
+    if (progress.revealed || Play.phase(game, progress, msLeft) !== "reveal") return progress;
+    return { ...progress, revealed: true };
+  },
+
+  // Locations the geofence may open right now: only the active one while a location is in
+  // progress, and none once the reveal is due.
+  openable(locations, progress, revealDue = false){
     if (progress.active) return locations.filter(l => l.id === progress.active);
+    if (revealDue || progress.revealed) return [];
     return locations.filter(l => !progress.completed.includes(l.id));
   },
 
@@ -131,6 +143,7 @@ const Play = {
     p.completed = (Array.isArray(p.completed) ? p.completed : []).filter(id => ids.has(id));
     if (!ids.has(p.active) || p.completed.includes(p.active)) p.active = null;
     for (const k of ["answers", "hints", "intro"]) if (!p[k] || typeof p[k] !== "object") p[k] = {};
+    p.revealed = p.revealed === true;
     return p;
   },
 
@@ -151,8 +164,6 @@ const Play = {
       if (!Number.isFinite(Number(task.answer)) || task.answer === "" || task.answer == null) problems.push("the answer must be a number");
       if (task.tolerance != null && task.tolerance !== "" && !(Number(task.tolerance) >= 0)) problems.push("the tolerance must be 0 or more");
     }
-    if (task.points != null && !(Number.isFinite(task.points) && task.points >= 0)) problems.push("points must be 0 or more");
-    if (task.hintPenalty != null && !(Number.isFinite(task.hintPenalty) && task.hintPenalty >= 0)) problems.push("the hint cost must be 0 or more");
     return problems;
   },
 
@@ -168,15 +179,27 @@ const Play = {
         for (const p of Play.validateTask(t)) lines.push(`${where}: ${p}`);
       });
     }
+    const duration = game.durationMinutes, reveal = game.revealMinutes;
+    if (!(Number.isInteger(duration) && duration > 0)) lines.push("Timing: the game length must be a whole number of minutes, more than 0");
+    if (!(Number.isInteger(reveal) && reveal >= 0)) lines.push("Timing: the clues time must be a whole number of minutes, 0 or more");
+    else if (Number.isInteger(duration) && reveal > duration) lines.push("Timing: the clues can't appear earlier than the start of the game");
+    const clues = game.clues || [], suspects = game.suspects || [];
+    if (!clues.length) lines.push("Clues: add at least one clue");
+    clues.forEach((c, i) => { if (!String(c.text ?? "").trim()) lines.push(`Clues: clue ${i + 1} is empty`); });
+    if (!suspects.length) lines.push("Suspects: add at least one suspect");
+    suspects.forEach((s, i) => { if (!String(s.name ?? "").trim()) lines.push(`Suspects: suspect ${i + 1} has no name`); });
     return lines;
   },
 
-  // A permanent id for a new challenge, unique within the game.
-  newTaskId(game, random = Math.random){
-    const taken = new Set(game.locations.flatMap(l => (l.tasks || []).map(t => t.id)));
+  // A permanent id, unique among the ids given: "t-…" for challenges, "c-…" clues, "s-…" suspects.
+  newId(prefix, taken, random = Math.random){
+    const used = new Set(taken);
     let id;
-    do { id = "t-" + Math.floor(random() * 36 ** 8).toString(36).padStart(8, "0"); } while (taken.has(id));
+    do { id = `${prefix}-` + Math.floor(random() * 36 ** 8).toString(36).padStart(8, "0"); } while (used.has(id));
     return id;
+  },
+  newTaskId(game, random = Math.random){
+    return Play.newId("t", game.locations.flatMap(l => (l.tasks || []).map(t => t.id)), random);
   },
 };
 

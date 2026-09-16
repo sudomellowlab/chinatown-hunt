@@ -2,7 +2,7 @@
 
 Everything needed to pick this up on another computer, show it to someone, or continue
 building it with Claude Code. Repo: `https://github.com/sudomellowlab/chinatown-hunt` (public).
-Last updated 16 September 2026, at commit `51589a3`.
+Last updated 16 September 2026, after step 4 (the timed clues & suspects screen).
 
 ---
 
@@ -10,7 +10,8 @@ Last updated 16 September 2026, at commit `51589a3`.
 
 A GPS treasure hunt for Telok Ayer / Ann Siang Hill in Singapore. A team walks with one
 phone; walking inside a location's circle opens it and presents its challenges one at a
-time. Eight locations, two hours.
+time. Eight locations, two hours. Near the end of each team's clock a screen shows the
+clues and suspects. No points are shown on this site: scoring is done in LoQuiz.
 
 **No server anywhere.** There are two HTML files, and that is the whole product:
 
@@ -50,6 +51,8 @@ Node 22+ only. `npm ci` is needed just for the browser tests.
 
 ## 3. Showing it without walking around Singapore
 
+- **Clues screen:** in the admin panel, **Show the clues screen now** previews it; dragging
+  the **Clock** slider (State section) below the reveal time triggers it for real.
 - **Admin file:** open it, then in the panel use **Jump to a location…** under Position
   source. That drops a simulated position on the pin, the location opens, and the
   challenges appear exactly as a participant would see them. **Simulated walk → Draw path
@@ -90,14 +93,16 @@ first.
 - Admin location editor: drag pins, paste coordinates or a Google Maps link, set radius.
 - **Export game file** producing the participant file, with the admin tools stripped out
   and the content scrambled.
-- Challenges: multiple choice, typed answers, numbers, with points and hints; the admin
-  editor to add, edit, reorder and delete them.
-- 119 unit tests and 52 browser tests, run by CI on every push.
+- Challenges: multiple choice, typed answers, numbers, with free hints; the admin editor to
+  add, edit, reorder and delete them. Answers are recorded but right/wrong is never shown.
+- Clues & suspects: you set the game length, how many minutes before the end they appear,
+  and both lists. At that point no new location can open (a team mid-location finishes it
+  first), then one screen shows all clues and suspects. No accusation on this site.
+- 122 unit tests and 63 browser tests, run by CI on every push.
 
 **Not built yet**
-1. **Step 4 — clues, suspects, deduction screen and end screen.** (A "starting location"
-   step was planned and then dropped: every location is open from the start.)
-2. **Real content.** All eight locations still hold placeholder coordinates and
+1. **Real content.** (A "starting location" step was planned and then dropped: every
+   location is open from the start.) All eight locations still hold placeholder coordinates and
    placeholder challenges.
 
 **Untested in the real world**
@@ -112,14 +117,17 @@ first.
 
 Agreed with you, and they override the older `SPEC.md`:
 - Challenges at a location run **strictly in order**.
-- **One attempt each.** Right earns the points, wrong earns 0. No retries, no skip button.
-- **Hints cost points** (25 by default) and never take a challenge below 0.
+- **One attempt each.** No retries, no skip button.
+- **No points and no right/wrong shown.** Scoring happens in LoQuiz. After answering, the
+  team sees "Answer saved." and the next challenge. Hints are free.
+- **Clues on a timer.** Each team's clock starts at Begin. From the set number of minutes
+  before the end (20 by default), or once every location is done, the clues & suspects
+  screen takes over and stays.
 - **No leaving a location part-way.** Once it opens, every challenge must be answered
   before any other location can open.
 - **Re-uploading an edited game keeps teams' progress**, because each challenge keeps a
   permanent hidden id.
-- Scoring, wrong-answer handling and hints are all in `src/play.js`, which is pure and
-  unit-tested.
+- All of these rules are in `src/play.js`, which is pure and unit-tested.
 
 ---
 

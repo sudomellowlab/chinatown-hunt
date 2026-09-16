@@ -1,6 +1,6 @@
 # Chinatown Historical Hunt
 
-A GPS treasure hunt for one phone per team, walking eight locations around Telok Ayer and Ann Siang Hill in Singapore. Walking into a location's geofence opens it, and each location presents a sequence of challenges. There is no backend: an admin builds the game in the admin file and exports a single self-contained participant file to a static HTTPS host; progress lives in `localStorage`.
+A GPS treasure hunt for one phone per team, walking eight locations around Telok Ayer and Ann Siang Hill in Singapore. Walking into a location's geofence opens it, and each location presents a sequence of challenges. Near the end of each team's clock, a single screen shows the clues and suspects. No points are shown on this site: scoring happens in LoQuiz. There is no backend: an admin builds the game in the admin file and exports a single self-contained participant file to a static HTTPS host; progress lives in `localStorage`.
 
 **Two files, two audiences.**
 - `dist/chinatown-hunt-admin.html`: the admin file, used in a desktop browser. Tools always on (panel docked beside the map at 960 px and wider; a full-screen sheet on a phone for field testing). Set up the game, test it, and **Export game file**. Design admin features for a computer first.
@@ -11,12 +11,12 @@ A GPS treasure hunt for one phone per team, walking eight locations around Telok
 ```
 src/game.js          GAME: the default game content (id is permanent; progress is keyed by it)
 src/engine.js        geofence engine: pure functions
-src/play.js          game rules: answer checking, scoring, challenge sequence, one-location-at-a-time, validation: pure
+src/play.js          game rules: answer checking, challenge sequence, one-location-at-a-time, the timed clues reveal, validation: pure
 src/pack.js          seal/open the game content for the participant file: pure (scrambling, not encryption)
 src/session.js       walk recording and walk-file format: pure, shared by the admin tools and the CLI
 src/poi.js           hand-placed location edits and coordinate parsing: pure
-src/app.js           the game participants run: map, GPS, HUD, location sheet (arrival → challenges → summary), start screen; exposes hooks
-src/admin.js         admin & dev tools: the draft, locations + challenges editor, export/import, emulator, recorder, replay (admin file only)
+src/app.js           the game participants run: map, GPS, HUD, location sheet (arrival → challenges → summary), clues & suspects screen, start screen; exposes hooks
+src/admin.js         admin & dev tools: the draft, locations + challenges editor, clues/suspects/timing editor, export/import, emulator, recorder, replay (admin file only)
 src/styles.css
 src/index.html       markup for both files; admin-only parts sit between <!-- admin:start/end --> markers
 build.js             zero-dependency Node script: builds both files, embeds the participant page in the admin file
@@ -41,7 +41,7 @@ node scripts/replay.js walks/x.json --radius 25 --ceiling 50 --streak 3   # repl
 python3 -m http.server 8765 --bind 127.0.0.1   # preview: /dist/chinatown-hunt-admin.html (admin) or /dist/chinatown-hunt.html (participant)
 ```
 
-Playwright runs two projects: `phone` (Pixel 7: the game, challenges, participant access, recorder) and `desktop` (1440×900: location and challenge editor, export, recorder, replay). Export and editor tests play the exported file in a separate phone context. Browser tests read location coordinates from the page and pick test positions geometrically, so they survive real coordinates replacing the placeholders. Chromium's geolocation emulation sends a code-2 "position unavailable" error before every emulated update, which conveniently exercises the app's transient-error handling; any alert a test doesn't expect fails it.
+Playwright runs two projects: `phone` (Pixel 7: the game, challenges, the clues reveal, participant access, recorder) and `desktop` (1440×900: location, challenge and clues editors, export, recorder, replay). Reveal tests use Playwright's fake clock. Export and editor tests play the exported file in a separate phone context. Browser tests read location coordinates from the page and pick test positions geometrically, so they survive real coordinates replacing the placeholders. Chromium's geolocation emulation sends a code-2 "position unavailable" error before every emulated update, which conveniently exercises the app's transient-error handling; any alert a test doesn't expect fails it.
 
 `src/index.html` needs a local server because it loads modules (Export only works in the built admin file); `dist/` files also open by double-clicking. Ask before adding any dependency; Leaflet and Playwright are the only ones agreed.
 
@@ -53,7 +53,9 @@ Playwright runs two projects: `phone` (Pixel 7: the game, challenges, participan
 - **Opened locations never re-lock**, however far the walker goes afterwards.
 - **The participant file contains no admin code, and no readable game content.** Keep admin features in `admin.js` and inside the admin markers; `app.js` only offers hooks. Game content goes in the sealed pack, never as literals in `app.js`.
 - **The admin's draft wins over `src/game.js`.** Everything built in the admin panel is saved in the browser as a draft (`chinatown-hunt-m1:draft`) and is never overwritten by a change to the default game; only Start over discards it. Import game file restores a draft from any exported file. The exported file is how the draft reaches participants.
-- **Game rules live in `play.js`, and override SPEC.md:** challenges strictly in order, one attempt each (wrong = 0, no retry, no skip), hints cost points but never below 0, and once a location opens no other can open until it is finished (`Play.openable` filters what the engine sees; `Play.activate` refuses a second active location). Answers are keyed by permanent task id, so a re-uploaded game keeps progress.
+- **Game rules live in `play.js`, and override SPEC.md:** challenges strictly in order, one attempt each (no retry, no skip), and once a location opens no other can open until it is finished (`Play.openable` filters what the engine sees; `Play.activate` refuses a second active location). Answers are keyed by permanent task id, so a re-uploaded game keeps progress.
+- **No points, and no verdicts, on this site.** Scoring is done in LoQuiz. After an answer the team only sees "Answer saved." and the next challenge; hints are free. `correct` is still recorded in progress but must never be shown. A browser test fails if "points", "correct", "wrong" or "score" appear on screen.
+- **The clues reveal is timed per team and sticky.** From `revealMinutes` before the end of the team's own clock (started at Begin), or once every location is finished, no new location can open; a team mid-location finishes it first; then the clues & suspects screen shows, GPS stops, and `progress.revealed` keeps it up for good. There is no accusation on this site. No per-location clues, no elimination matrix, no end screen (SPEC.md's versions are superseded).
 - **Replayed fixes aren't recorded.** The recorder skips `source === "replay"`, so exporting after a replay doesn't duplicate the walk. This is recorder bookkeeping, not engine logic; the engine never sees `source`.
 - **The manual-override dwell timer uses each fix's `t`, never the wall clock**, so replays at any speed reach the same verdict as a live walk. Rejected fixes neither start nor clear a timer.
 - **Each built file stays single and self-contained.** No bundler, no framework, no npm install needed to produce them.
@@ -63,4 +65,4 @@ Walk files hold timestamped GPS tracks and the repo is public, so `walks/` is gi
 ## Docs
 
 - `SPEC.md`: the full product brief (game content shape, engine rules, screens, dev mode, design). Its "single HTML file, no build step" constraint has been relaxed to the `src/` + `build.js` layout above.
-- `HANDOFF.md`: the current order of work, which overrides SPEC.md's build order. Steps 1–4 are done. The user's game-builder plan now leads: (1) export the participant file (done), (2) challenges per location with their admin editor (done), (3) start location: dropped, every location is open from the start, (4) clues, suspects, deduction, end screen: next. Game rules that override SPEC.md: challenges strictly sequenced, one attempt each (wrong = 0, no retries, no skip), hints cost points, no leaving a location until it's finished. Stop for review after each step, and commit at each step.
+- `HANDOFF.md`: the current order of work, which overrides SPEC.md's build order. Steps 1–4 are done. The user's game-builder plan now leads: (1) export the participant file (done), (2) challenges per location with their admin editor (done), (3) start location: dropped, every location is open from the start, (4) timed clues & suspects screen (done). Game rules that override SPEC.md: challenges strictly sequenced, one attempt each, no points or verdicts shown, free hints, no leaving a location until it's finished, clues shown on a timer. Stop for review after each step, and commit at each step.

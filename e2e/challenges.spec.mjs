@@ -1,4 +1,5 @@
 // Playing a location's challenges, as a participant on a phone, with the participant file.
+// No points and no right/wrong are ever shown: scoring happens in LoQuiz.
 import { readFileSync } from "node:fs";
 import { test, expect, offset, pickArrival, far } from "./fixtures.mjs";
 import { GAME } from "../src/game.js";
@@ -16,87 +17,81 @@ async function arriveAt(app, loc = THK, approach = route.approach) {
   for (const p of approach) await app.fix(p);
   for (let i = 0; i < 3; i++) await app.fix(offset(loc, 1, i * 120));
 }
-const sheet = page => ({
-  place: page.locator("#sheetplace"), name: page.locator("#sheetname"), prompt: page.locator("#prompt"),
-  btn: page.locator("#stageBtn"), feedback: page.locator("#feedback"),
-});
 async function answer(page, task, response) {
   if (task.type === "multiple_choice") await page.locator(".opt").nth(response).click();
   else await page.locator("#answerInput").fill(String(response));
   await page.locator("#stageBtn").click();
 }
+// Nothing on screen may hint at scoring or at whether an answer was right.
+async function expectNoVerdict(page) {
+  const text = await page.locator("body").innerText();
+  expect(text).not.toMatch(/\bpoints?\b|\bcorrect\b|not quite|\bwrong\b|\bscore\b/i);
+}
 
-test("arrival text first, then each challenge in order, one answer each, then a summary", async ({ app, page }) => {
+test("arrival text first, then each challenge in order, one answer each, then a summary; no verdicts", async ({ app, page }) => {
   await app.open({ file: "play" });
   await arriveAt(app);
-  const s = sheet(page);
+  const place = page.locator("#sheetplace"), btn = page.locator("#stageBtn");
 
-  await expect(s.name).toHaveText(THK.name);
-  await expect(s.place).toHaveText("you have arrived");
+  await expect(page.locator("#sheetname")).toHaveText(THK.name);
+  await expect(place).toHaveText("you have arrived");
   await expect(page.locator("#sheettext")).toHaveText(THK.arrivalText);
-  await expect(s.btn).toHaveText("Start the challenges");
-  await s.btn.click();
+  await btn.click();                                             // Start the challenges
 
-  // 1: multiple choice, right.
-  await expect(s.place).toHaveText("challenge 1 of 3");
-  await expect(s.prompt).toHaveText(MC.prompt);
+  // 1: multiple choice, answered right. Straight on to 2, with only a neutral note.
+  await expect(place).toHaveText("challenge 1 of 3");
+  await expect(page.locator("#prompt")).toHaveText(MC.prompt);
   await expect(page.locator(".opt")).toHaveText(MC.options);
-  await expect(s.btn, "can't submit without choosing").toBeDisabled();
+  await expect(btn, "can't submit without choosing").toBeDisabled();
   await answer(page, MC, MC.answer);
-  await expect(s.feedback).toHaveText(`Correct! +${MC.points} points`);
-  await expect(page.locator(".opt"), "no second try").toHaveCount(0);
-  await expect(page.locator("#score")).toHaveText(String(MC.points));
-  await s.btn.click();
+  await expect(place).toHaveText("challenge 2 of 3");
+  await expect(page.locator("#savedNote")).toHaveText("Answer saved.");
+  await expectNoVerdict(page);
 
-  // 2: number, wrong.
-  await expect(s.place).toHaveText("challenge 2 of 3");
-  await expect(s.prompt).toHaveText(NUM.prompt);
+  // 2: number, answered wrong. It looks exactly the same.
+  await expect(page.locator("#prompt")).toHaveText(NUM.prompt);
   await answer(page, NUM, NUM.answer + 5);
-  await expect(s.feedback).toHaveText("Not quite. 0 points.");
-  await expect(page.locator("#answerInput"), "no second try").toHaveCount(0);
-  await s.btn.click();
+  await expect(place).toHaveText("challenge 3 of 3");
+  await expect(page.locator("#savedNote")).toHaveText("Answer saved.");
+  await expectNoVerdict(page);
 
-  // 3: typed text, right despite case, spacing and punctuation.
-  await expect(s.place).toHaveText("challenge 3 of 3");
+  // 3: typed text.
   await answer(page, TXT, `  ${TXT.accept[0].toUpperCase()}!! `);
-  await expect(s.feedback).toHaveText(`Correct! +${TXT.points} points`);
-  await expect(s.btn).toHaveText("See your score");
-  await s.btn.click();
-
-  const total = MC.points + TXT.points;
-  await expect(s.place).toHaveText("location complete");
-  await expect(page.locator("#summary")).toHaveText(`2 of 3 right · ${total} points here`);
-  await s.btn.click();                                           // Back to the map
+  await expect(place).toHaveText("location complete");
+  await expect(page.locator("#summary")).toHaveText("You've finished this location.");
+  await expectNoVerdict(page);
+  await btn.click();                                             // Back to the map
   await expect(page.locator("#sheet")).not.toHaveClass(/\bup\b/);
-  await expect(page.locator("#score")).toHaveText(String(total));
   await expect(page.locator("#reached")).toHaveText("1");
   await expect(page.locator(`.pin[data-id="${THK.id}"]`)).toHaveClass(/\breached\b/);
+  await expectNoVerdict(page);
+
+  // Right and wrong were recorded, just never shown.
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chinatown-hunt:chinatown-historical-hunt")).progress.answers);
+  expect([saved[MC.id].correct, saved[NUM.id].correct, saved[TXT.id].correct]).toEqual([true, false, true]);
 });
 
-test("a hint costs points and can't be taken back; the challenge is still worth the rest", async ({ app, page }) => {
+test("a hint is free, stays revealed after a reload, and can't be hidden again", async ({ app, page }) => {
   await app.open({ file: "play" });
   await arriveAt(app);
   await page.locator("#stageBtn").click();
 
-  await expect(page.locator(".small").first()).toHaveText(`Worth ${MC.points} points. One try only.`);
+  await expect(page.locator("#hintBtn")).toHaveText("Show hint");
   await page.locator("#hintBtn").click();
   await expect(page.locator("#hintText")).toHaveText(`Hint: ${MC.hint}`);
-  await expect(page.locator(".small").first()).toHaveText(`Worth ${MC.points - MC.hintPenalty} points. One try only.`);
+  await expectNoVerdict(page);
 
-  await page.reload();                                           // the hint stays revealed, and paid for
+  await page.reload();
   await page.locator("#startBtn").click();
   await expect(page.locator("#hintText")).toBeVisible();
   await expect(page.locator("#hintBtn")).toHaveCount(0);
-
-  await answer(page, MC, MC.answer);
-  await expect(page.locator("#feedback")).toHaveText(`Correct! +${MC.points - MC.hintPenalty} points`);
 });
 
 test("a reload mid-location goes back to the next unanswered challenge", async ({ app, page }) => {
   await app.open({ file: "play" });
   await arriveAt(app);
   await page.locator("#stageBtn").click();
-  await answer(page, MC, (MC.answer + 1) % MC.options.length);   // wrong, and final
+  await answer(page, MC, (MC.answer + 1) % MC.options.length);
 
   await page.reload();
   await expect(page.locator("#startBtn")).toHaveText("Continue");
@@ -104,7 +99,6 @@ test("a reload mid-location goes back to the next unanswered challenge", async (
   await expect(page.locator("#sheetname")).toHaveText(THK.name);
   await expect(page.locator("#sheetplace")).toHaveText("challenge 2 of 3");
   await expect(page.locator("#prompt")).toHaveText(NUM.prompt);
-  await expect(page.locator("#score")).toHaveText("0");
 });
 
 test("no leaving: while a location is open, no other location opens and the sheet can't be closed", async ({ app, page }) => {
@@ -123,9 +117,9 @@ test("no leaving: while a location is open, no other location opens and the shee
   await expect(page.locator("#target")).toHaveText(THK.name);
 
   // Finish Thian Hock Keng from where they are; then the other location opens on the next fixes.
-  await answer(page, MC, MC.answer); await page.locator("#stageBtn").click();
-  await answer(page, NUM, NUM.answer); await page.locator("#stageBtn").click();
-  await answer(page, TXT, TXT.accept[0]); await page.locator("#stageBtn").click();
+  await answer(page, MC, MC.answer);
+  await answer(page, NUM, NUM.answer);
+  await answer(page, TXT, TXT.accept[0]);
   await page.locator("#stageBtn").click();                       // Back to the map
   for (let i = 0; i < 3; i++) await app.fix(offset(other.loc, 1, i * 90));
   await expect(page.locator("#sheetname")).toHaveText(other.loc.name);
@@ -137,22 +131,20 @@ test("a re-uploaded game keeps progress: a reworded question and an added challe
   await arriveAt(app);
   await page.locator("#stageBtn").click();
   await answer(page, MC, MC.answer);
-  await expect(page.locator("#score")).toHaveText(String(MC.points));
+  await expect(page.locator("#sheetplace")).toHaveText("challenge 2 of 3");
 
   // The organiser rewords challenge 2 and inserts a new challenge before it, then re-uploads.
   const game = structuredClone(GAME);
   const thk = game.locations.find(l => l.id === THK.id);
   thk.tasks[1].prompt = "How many stone lions guard the entrance?";
-  thk.tasks.splice(1, 0, { id: "t-new-00001", type: "text", prompt: "Name the temple's sea goddess.", accept: ["mazu"], points: 60 });
+  thk.tasks.splice(1, 0, { id: "t-new-00001", type: "text", prompt: "Name the temple's sea goddess.", accept: ["mazu"] });
   const html = readFileSync(PLAY_FILE, "utf8").replace(/Pack\.open\("cth1\.[^"]+"\)/, () => `Pack.open(${JSON.stringify(Pack.seal(game))})`);
   await app.open({ file: "play", html });
 
   await expect(page.locator("#startBtn")).toHaveText("Continue");
   await page.locator("#startBtn").click();
-  await expect(page.locator("#score")).toHaveText(String(MC.points));
   await expect(page.locator("#sheetplace")).toHaveText("challenge 2 of 4");
   await expect(page.locator("#prompt")).toHaveText("Name the temple's sea goddess.");
   await answer(page, thk.tasks[1], "Mazu");
-  await page.locator("#stageBtn").click();
   await expect(page.locator("#prompt")).toHaveText("How many stone lions guard the entrance?");
 });

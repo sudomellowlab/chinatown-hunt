@@ -80,12 +80,12 @@ export async function createApp({ page, context }) {
     const app = {
       // file: "admin" (default) or "play" for the default participant file; html: serve this page instead.
       // patch: edit the served HTML, e.g. to change GAME. Throws if the edit doesn't apply.
-      async open({ file = "admin", html, patch, query = "" } = {}) {
+      async open({ file = "admin", html, patch, query = "", pins = 8 } = {}) {
         if (html) source = () => html;
         else source = () => readFileSync(file === "play" ? PLAY_FILE : ADMIN_FILE, "utf8");
         if (patch) patchHtml = h => { const out = patch(h); if (out === h) throw new Error("patch did not apply"); return out; };
         await page.goto(APP + query);
-        await expect(page.locator(".pin")).toHaveCount(8);
+        await expect(page.locator(".pin")).toHaveCount(pins);
         if (await page.locator("#drawer").count()) await app.closeTools();   // admin file: start from the map
       },
       isAdmin: async () => (await page.locator("#drawer").count()) > 0,

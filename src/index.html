@@ -35,7 +35,6 @@
   <div class="dist"><span id="metres">—</span><small>m away</small></div>
   <div class="tally">
     <span><span id="reached">0</span> of <span id="total">8</span> done</span>
-    <span><span id="score">0</span> points</span>
     <span id="clock">2:00:00</span>
   </div>
   <button id="override">I'm standing right here — open it</button>
@@ -50,6 +49,19 @@
   <div class="place" id="sheetplace"></div>
   <h2 id="sheetname"></h2>
   <div id="stage"></div>
+</div>
+
+<div id="reveal" hidden>
+  <div class="revealcard">
+    <div class="rule"></div>
+    <div class="place">the investigation</div>
+    <h1 id="revealTitle"></h1>
+    <p class="lead">No more locations can be opened. Read the clues and work out which of the suspects did it.</p>
+    <h2>Clues</h2>
+    <ol id="clueList" class="cluelist"></ol>
+    <h2>Suspects</h2>
+    <ul id="suspectList" class="suspectlist"></ul>
+  </div>
 </div>
 
 <div id="start" hidden>
@@ -119,11 +131,7 @@
         <label class="stack">Answer <input type="text" id="tfAnswer" inputmode="decimal"></label>
         <label class="stack">Allow ± <input type="text" id="tfTolerance" inputmode="decimal" placeholder="0"></label>
       </div>
-      <div class="pair">
-        <label class="stack">Points <input type="number" id="tfPoints" min="0" step="5"></label>
-        <label class="stack">Hint costs <input type="number" id="tfHintPenalty" min="0" step="5"></label>
-      </div>
-      <label class="stack">Hint <span class="note inline">optional</span> <textarea id="tfHint" class="prose" rows="2"></textarea></label>
+      <label class="stack">Hint <span class="note inline">optional, free for the team to reveal</span> <textarea id="tfHint" class="prose" rows="2"></textarea></label>
       <div class="note bad" id="tfErrors"></div>
       <div class="row"><button class="btn primary" id="tfSave">Save challenge</button><button class="btn" id="tfCancel">Cancel</button></div>
     </div>
@@ -136,6 +144,25 @@
       </div>
       <textarea id="capOut" readonly placeholder="Copy JSON puts the locations here."></textarea>
     </details>
+  </div>
+
+  <div class="grp">
+    <h4>Clues &amp; suspects</h4>
+    <div class="note">Shown to every team on one screen near the end of their game. From that point no new location can be opened; a team part-way through a location finishes it first.</div>
+    <div class="pair">
+      <label class="stack">Game length, minutes <input type="number" id="durationEdit" min="1" step="1"></label>
+      <label class="stack">Show clues with this many minutes left <input type="number" id="revealEdit" min="0" step="1"></label>
+    </div>
+    <div class="note" id="timingInfo"></div>
+
+    <h5>Clues <span class="note inline" id="clueCount"></span></h5>
+    <ol id="clueEdit" class="tasklist"></ol>
+    <div class="row"><button class="btn" id="clueAdd">Add clue</button></div>
+
+    <h5>Suspects <span class="note inline" id="suspectCount"></span></h5>
+    <ol id="suspectEdit" class="tasklist"></ol>
+    <div class="row"><button class="btn" id="suspectAdd">Add suspect</button></div>
+    <div class="row"><button class="btn" id="previewReveal">Show the clues screen now</button></div>
   </div>
 
   <div class="grp">
