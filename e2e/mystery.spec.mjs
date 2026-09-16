@@ -47,8 +47,8 @@ test("edit the timing, clues and suspects, and a phone shows exactly those at th
 
   // Suspects: add one with a name only, rename the first.
   await page.locator("#suspectAdd").click();
-  await suspectRows(page).last().locator("input").fill("Mr. Nobody");
-  await suspectRows(page).first().locator("input").fill("Tan Boon Seng (retired)");
+  await suspectRows(page).last().locator("input:not(.imglink)").fill("Mr. Nobody");
+  await suspectRows(page).first().locator("input:not(.imglink)").fill("Tan Boon Seng (retired)");
   const suspects = ["Tan Boon Seng (retired)", ...GAME.suspects.slice(1).map(s => s.name), "Mr. Nobody"];
 
   // Survives a reload.
@@ -58,7 +58,7 @@ test("edit the timing, clues and suspects, and a phone shows exactly those at th
   await expect(page.locator("#durationEdit")).toHaveValue("90");
   await expect(page.locator("#revealEdit")).toHaveValue("30");
   expect(await values(clueRows(page).locator("textarea"))).toEqual(clues);
-  expect(await values(suspectRows(page).locator("input"))).toEqual(suspects);
+  expect(await values(suspectRows(page).locator("input:not(.imglink)"))).toEqual(suspects);
 
   const html = await exportGame(page);
   for (const secret of ["A brand new clue", "Mr. Nobody", "reworded"]) expect(html).not.toContain(secret);
@@ -98,7 +98,7 @@ test("export is blocked until timing, clues and suspects are complete", async ({
   await expect(page.locator("#exportInfo")).toContainText(`Suspects: suspect ${GAME.suspects.length + 1} has no name`);
 
   await clueRows(page).last().locator("textarea").fill("Now it has words.");
-  await suspectRows(page).last().locator("input").fill("Now has a name");
+  await suspectRows(page).last().locator("input:not(.imglink)").fill("Now has a name");
   await expect(page.locator("#exportGame")).toBeEnabled();
 
   await setNumber(page, "durationEdit", "");

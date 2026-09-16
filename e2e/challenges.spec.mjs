@@ -22,10 +22,12 @@ async function answer(page, task, response) {
   else await page.locator("#answerInput").fill(String(response));
   await page.locator("#stageBtn").click();
 }
-// Nothing on screen may hint at scoring or at whether an answer was right.
+// Nothing on screen may hint at scoring or at whether an answer was right,
+// and no placeholder may leak through as text.
 async function expectNoVerdict(page) {
   const text = await page.locator("body").innerText();
   expect(text).not.toMatch(/\bpoints?\b|\bcorrect\b|not quite|\bwrong\b|\bscore\b/i);
+  expect(text).not.toMatch(/\bnull\b|\bundefined\b|\[object /);
 }
 
 test("arrival text first, then each challenge in order, one answer each, then a summary; no verdicts", async ({ app, page }) => {
@@ -40,6 +42,7 @@ test("arrival text first, then each challenge in order, one answer each, then a 
 
   // 1: multiple choice, answered right. Straight on to 2, with only a neutral note.
   await expect(place).toHaveText("challenge 1 of 3");
+  await expectNoVerdict(page);
   await expect(page.locator("#prompt")).toHaveText(MC.prompt);
   await expect(page.locator(".opt")).toHaveText(MC.options);
   await expect(btn, "can't submit without choosing").toBeDisabled();
@@ -147,4 +150,21 @@ test("a re-uploaded game keeps progress: a reworded question and an added challe
   await expect(page.locator("#prompt")).toHaveText("Name the temple's sea goddess.");
   await answer(page, thk.tasks[1], "Mazu");
   await expect(page.locator("#prompt")).toHaveText("How many stone lions guard the entrance?");
+});
+
+test("a challenge with no hint and no picture shows neither, and no stray text", async ({ app, page }) => {
+  const game = structuredClone(GAME);
+  const thk = game.locations.find(l => l.id === THK.id);
+  for (const t of thk.tasks) delete t.hint;
+  const html = readFileSync(PLAY_FILE, "utf8").replace(/Pack\.open\("cth1\.[^"]+"\)/, () => `Pack.open(${JSON.stringify(Pack.seal(game))})`);
+  await app.open({ file: "play", html });
+  await arriveAt(app);
+  await expectNoVerdict(page);
+  await page.locator("#stageBtn").click();
+  await expect(page.locator("#prompt")).toHaveText(MC.prompt);
+  await expect(page.locator("#hintBtn, #hintText, #stage figure")).toHaveCount(0);
+  await expect(page.locator("#stage")).not.toContainText("null");
+  await expectNoVerdict(page);
+  await answer(page, MC, 0);
+  await expectNoVerdict(page);
 });

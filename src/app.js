@@ -231,6 +231,37 @@ function h(tag, props = {}, ...children){
   return el;
 }
 
+/* A linked picture. If it can't load (usually no signal), say so and offer a retry instead of
+   leaving a gap. Images come from the organiser's server; nothing is embedded. */
+function picture(url, cls, alt){
+  if (!Play.imageProblem(url) && String(url ?? "").trim()) {
+    const src = String(url).trim();
+    const wrap = h("figure", { class: `pic ${cls}` });
+    const img = h("img", { src, alt, decoding:"async" });
+    const fail = h("div", { class:"picfail", hidden:true },
+      h("span", {}, "Image didn't load. Check your signal."),
+      h("button", { class:"secondary picretry", onclick: () => {
+        fail.hidden = true; img.hidden = false;
+        img.src = src + (src.includes("?") ? "&" : "?") + "retry=" + Date.now();
+      } }, "Try again"));
+    img.addEventListener("error", () => { img.hidden = true; fail.hidden = false; });
+    img.addEventListener("load", () => { fail.hidden = true; img.hidden = false; });
+    wrap.append(img, fail);
+    return wrap;
+  }
+  return null;
+}
+// Fetch every picture in the game up front, so teams have them before walking into a dead spot.
+// Keeping them relies on the image server's normal caching.
+const preloaded = [];
+function preloadImages(){
+  if (preloaded.length) return;
+  for (const url of Play.imageUrls(GAME)) { const img = new Image(); img.src = url; preloaded.push(img); }
+}
+
+// replaceChildren prints null as the text "null"; this skips anything that isn't there.
+function fill(el, ...children){ el.replaceChildren(...children.flat().filter(c => c != null && c !== false)); }
+
 function renderSheet(){
   const l = state.progress.active && locationById(state.progress.active);
   if (!l) { $("sheet").classList.remove("up"); return; }
@@ -244,7 +275,7 @@ function renderSheet(){
   if (stage.kind === "arrival") {
     $("sheetplace").textContent = "you have arrived";
     const n = (l.tasks || []).length;
-    body.replaceChildren(
+    fill(body,
       h("p", { id:"sheettext" }, l.arrivalText || ""),
       h("p", { class:"small" }, n ? `${n} challenge${n === 1 ? "" : "s"} here. One answer each, and you finish this location before moving on.` : ""),
       closingNote,
@@ -279,8 +310,9 @@ function renderSheet(){
               state.progress = Play.revealHint(state.progress, task.id); save(); renderSheet();
             } }, "Show hint"))
       : null;
-    body.replaceChildren(
+    fill(body,
       savedNote, closingNote,
+      picture(task.image, "qimg", "Picture for this challenge"),
       h("p", { id:"prompt", class:"prompt" }, task.prompt),
       h("p", { class:"small" }, "One answer only. Check it before you submit."),
       answerArea, hintArea, submit,
@@ -289,7 +321,7 @@ function renderSheet(){
     $("sheetplace").textContent = "location complete";
     // Judged as if this location were already finished, so the last one leads straight to the clues.
     const due = Play.revealDue(GAME, Play.finish(state.progress, l), msLeft());
-    body.replaceChildren(
+    fill(body,
       savedNote,
       h("p", { id:"summary", class:"prompt" }, "You've finished this location."),
       h("p", { class:"small" }, due ? "Time for the clues." : "Head for your next location."),
@@ -348,9 +380,11 @@ function renderReveal(preview = false){
   $("reveal").hidden = !show;
   if (!show) return;
   $("revealTitle").textContent = GAME.title;
-  $("clueList").replaceChildren(...(GAME.clues || []).map(c => h("li", {}, c.text)));
+  $("clueList").replaceChildren(...(GAME.clues || []).map((c, i) =>
+    h("li", {}, h("p", {}, c.text), picture(c.image, "clueimg", `Picture for clue ${i + 1}`))));
   $("suspectList").replaceChildren(...(GAME.suspects || []).map(s =>
-    h("li", {}, h("strong", {}, s.name), s.blurb ? h("span", {}, s.blurb) : null)));
+    h("li", { class: s.image ? "withpic" : "" }, picture(s.image, "portrait", `Portrait of ${s.name}`),
+      h("div", { class:"who" }, h("strong", {}, s.name), s.blurb ? h("span", {}, s.blurb) : null))));
 }
 
 $("override").onclick = e => {
@@ -401,6 +435,7 @@ function hideStart(){ $("start").hidden = true; }
 $("startBtn").onclick = () => {
   if (!state.startedAt) { state.startedAt = Date.now(); save(); renderClock(); }
   hideStart();
+  preloadImages();
   checkReveal();
   if (!state.progress.revealed) startReal();      // the clues screen needs no location
 };

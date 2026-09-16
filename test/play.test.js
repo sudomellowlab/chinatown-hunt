@@ -236,6 +236,27 @@ describe("validation", () => {
       ["Clues: clue 1 is empty", "Suspects: suspect 1 has no name"]);
   });
 
+  test("image links must be https web addresses; none at all is fine", () => {
+    assert.equal(Play.imageProblem(undefined), null);
+    assert.equal(Play.imageProblem("  "), null);
+    assert.equal(Play.imageProblem("https://img.example.sg/hunt/lions.jpg"), null);
+    assert.match(Play.imageProblem("http://img.example.sg/lions.jpg"), /https:\/\/ \(phones block http images\)/);
+    assert.match(Play.imageProblem("lions.jpg"), /isn't a web address/);
+    assert.match(Play.imageProblem("ftp://x.sg/a.jpg"), /must start with https:\/\//);
+    assert.deepEqual(Play.validateTask({ ...mc, image: "http://x.sg/a.jpg" }), ["the image link must start with https:// (phones block http images)"]);
+    assert.deepEqual(Play.validateGame({ ...game,
+      clues: [{ id: "c", text: "t", image: "nope" }], suspects: [{ id: "s", name: "n", image: "http://x/y.png" }] }), [
+      "Clues: clue 1: the image link isn't a web address",
+      "Suspects: suspect 1: the image link must start with https:// (phones block http images)",
+    ]);
+  });
+
+  test("imageUrls lists every usable image once, in order", () => {
+    const g = { locations: [{ tasks: [{ image: "https://a.sg/1.jpg" }, { image: "" }, { image: "http://bad" }] }],
+      clues: [{ image: " https://a.sg/2.jpg " }, {}], suspects: [{ image: "https://a.sg/1.jpg" }] };
+    assert.deepEqual(Play.imageUrls(g), ["https://a.sg/1.jpg", "https://a.sg/2.jpg"]);
+  });
+
   test("new ids never repeat one already taken", () => {
     const seq = [0, 0, 0.5];
     const id = Play.newTaskId({ locations: [{ tasks: [{ id: "t-00000000" }] }] }, () => seq.shift());

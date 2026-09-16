@@ -550,7 +550,7 @@ function renderTasks(){
       <div class="tbtns"><button class="btn tup" title="Move up">↑</button><button class="btn tdown" title="Move down">↓</button><button class="btn tedit">Edit</button><button class="btn warn tdel">Delete</button></div>`;
     li.querySelector(".tnum").textContent = i + 1;
     li.querySelector(".ttype").textContent = TYPE_LABELS[t.type] || t.type;
-    li.querySelector(".tpts").textContent = t.hint ? "hint" : "";
+    li.querySelector(".tpts").textContent = [t.image && "image", t.hint && "hint"].filter(Boolean).join(" · ");
     li.querySelector(".tprompt").textContent = t.prompt || "(no question yet)";
     li.querySelector(".tprob").textContent = problems.join(" · ");
     li.querySelector(".tup").disabled = i === 0;
@@ -597,6 +597,8 @@ function openTaskForm(l, index){
   $("tfAnswer").value = t.type === "number" && t.answer != null ? t.answer : "";
   $("tfTolerance").value = t.type === "number" && t.tolerance ? t.tolerance : "";
   $("tfHint").value = t.hint || "";
+  $("tfImage").value = t.image || "";
+  showImagePreview($("tfImagePrev"), t.image);
   $("tfErrors").textContent = "";
   showTypeFields();
   $("taskForm").hidden = false; $("taskAdd").hidden = true;
@@ -647,9 +649,12 @@ function readTaskForm(){
   }
   const hint = $("tfHint").value.trim();
   if (hint) t.hint = hint;
+  const image = $("tfImage").value.trim();
+  if (image) t.image = image;
   return t;
 }
 
+$("tfImage").addEventListener("input", e => showImagePreview($("tfImagePrev"), e.target.value));
 $("taskAdd").onclick = () => { const l = selectedLocation(); if (l) openTaskForm(l, -1); };
 $("tfType").onchange = showTypeFields;
 $("tfAddOption").onclick = () => { const { options, correct } = readOptions(); renderOptions([...options, ""], correct); };
@@ -680,11 +685,27 @@ function renderMystery(){
     : "";
   editableList("clueEdit", "clueCount", GAME.clues, "clue", c => [
     field("textarea", c.text, "What the teams read", v => { c.text = v; }),
+    ...imageField(c),
   ]);
   editableList("suspectEdit", "suspectCount", GAME.suspects, "suspect", s => [
     field("input", s.name, "Name", v => { s.name = v; }),
     field("textarea", s.blurb || "", "One line about them (optional)", v => { s.blurb = v; }),
+    ...imageField(s),
   ]);
+}
+// An optional image link with a live preview; an empty link removes the image.
+function imageField(item){
+  const prev = document.createElement("div");
+  prev.className = "imgprev";
+  const input = field("input", item.image || "", "Image link (optional): https://…", v => {
+    const url = v.trim();
+    if (url) item.image = url; else delete item.image;
+    showImagePreview(prev, url);
+  });
+  input.classList.add("imglink");
+  input.inputMode = "url";
+  showImagePreview(prev, item.image);
+  return [input, prev];
 }
 function field(tag, value, placeholder, set){
   const el = document.createElement(tag);
@@ -746,6 +767,55 @@ previewClose.textContent = "Close preview (admin)";
 $("reveal").querySelector(".revealcard").prepend(previewClose);
 $("previewReveal").onclick = () => { renderReveal(true); previewClose.hidden = false; makeRoomForMap(); };
 previewClose.onclick = () => { previewClose.hidden = true; renderReveal(); };
+
+/* ════════════════════════════════════════════════════════════════════
+   IMAGE LINKS — previews while typing, and a check that every link in the
+   game actually loads, since a typo would only show up on a team's phone.
+   ════════════════════════════════════════════════════════════════════ */
+function showImagePreview(box, url){
+  const s = String(url ?? "").trim();
+  const problem = Play.imageProblem(s);
+  box.replaceChildren();
+  box.className = "imgprev";
+  if (!s) return;
+  if (problem) { box.textContent = problem; box.classList.add("bad"); return; }
+  const img = document.createElement("img");
+  img.alt = "Preview"; img.src = s;
+  img.onerror = () => { box.textContent = "This link doesn't load an image. Check the address."; box.classList.add("bad"); };
+  box.append(img);
+}
+function loads(url, timeout = 15000){
+  return new Promise(resolve => {
+    const img = new Image();
+    const t = setTimeout(() => resolve(false), timeout);
+    img.onload = () => { clearTimeout(t); resolve(true); };
+    img.onerror = () => { clearTimeout(t); resolve(false); };
+    img.src = url;
+  });
+}
+// Where each link is used, for the report: "Thian Hock Keng Temple, challenge 2", "Clue 3", "Suspect: Tan Boon Seng".
+function imageUses(){
+  const uses = [];
+  for (const l of GAME.locations) (l.tasks || []).forEach((t, i) => t.image && uses.push({ url: t.image.trim(), where: `${l.name}, challenge ${i + 1}` }));
+  (GAME.clues || []).forEach((c, i) => c.image && uses.push({ url: c.image.trim(), where: `Clue ${i + 1}` }));
+  (GAME.suspects || []).forEach(s => s.image && uses.push({ url: s.image.trim(), where: `Suspect: ${s.name || "(no name)"}` }));
+  return uses.filter(u => u.url && !Play.imageProblem(u.url));
+}
+$("checkImages").onclick = async () => {
+  const uses = imageUses(), info = $("imageInfo");
+  info.classList.remove("bad");
+  if (!uses.length) { info.textContent = "No images in the game yet."; return; }
+  $("checkImages").disabled = true;
+  info.textContent = `Checking ${uses.length} image link${uses.length === 1 ? "" : "s"}…`;
+  const urls = [...new Set(uses.map(u => u.url))];
+  const ok = new Map(await Promise.all(urls.map(async u => [u, await loads(u)])));
+  const broken = uses.filter(u => !ok.get(u.url));
+  info.textContent = broken.length
+    ? `${broken.length} image${broken.length === 1 ? "" : "s"} didn't load:\n${broken.map(b => `• ${b.where}: ${b.url}`).join("\n")}`
+    : `All ${urls.length} image link${urls.length === 1 ? "" : "s"} load.`;
+  info.classList.toggle("bad", broken.length > 0);
+  $("checkImages").disabled = false;
+};
 
 /* ════════════════════════════════════════════════════════════════════
    WALK RECORDER — export
@@ -878,5 +948,7 @@ function clearProgress(){
 /* ════════════════════════════════════════════════════════════════════
    BOOT
    ════════════════════════════════════════════════════════════════════ */
+// The game drew its screens before the draft was applied above; redraw them with the admin's content.
+renderSheet();
 renderPoi(); renderMystery(); renderExport(); setSrcButtons(); renderLog(); render(); checkReveal();
 if (wideScreen.matches) toggleDrawer(true);      // on a computer, open with the tools showing

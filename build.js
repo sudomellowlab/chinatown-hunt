@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { GAME } from "./src/game.js";
 import { Pack } from "./src/pack.js";
+import { Play } from "./src/play.js";
 
 const root = import.meta.dirname;
 const src = f => fs.readFileSync(path.join(root, "src", f), "utf8");
@@ -52,7 +53,7 @@ const playable = swap(template, '"__GAME_PACK__"', JSON.stringify(Pack.seal(GAME
 for (const l of GAME.locations)
   for (const text of [l.name, l.arrivalText, ...(l.tasks || []).flatMap(t => [t.prompt, t.hint, ...(t.options || []), ...(t.accept || []).filter(a => a.length > 5)])])
     if (text && playable.includes(text)) throw new Error(`build: readable game content in the participant file ("${text.slice(0, 30)}")`);
-for (const text of [...(GAME.clues || []).map(c => c.text), ...(GAME.suspects || []).flatMap(s => [s.name, s.blurb])])
+for (const text of [...(GAME.clues || []).map(c => c.text), ...(GAME.suspects || []).flatMap(s => [s.name, s.blurb]), ...Play.imageUrls(GAME)])
   if (text && playable.includes(text)) throw new Error(`build: readable clue or suspect in the participant file ("${text.slice(0, 30)}")`);
 
 fs.mkdirSync(path.join(root, "dist"), { recursive: true });

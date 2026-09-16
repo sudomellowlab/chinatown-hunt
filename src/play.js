@@ -21,6 +21,9 @@
        hints: { taskId: true }, intro: { locId: true }, revealed: bool }
    Answers are keyed by permanent task id, so a re-uploaded game keeps them.
    `correct` is recorded but never shown to the team.
+
+   Challenges, clues and suspects may carry `image`: an https link to a
+   picture on the organiser's server. Images are never embedded.
    ════════════════════════════════════════════════════════════════════ */
 const Play = {
   TYPES: ["multiple_choice", "text", "number"],
@@ -147,12 +150,37 @@ const Play = {
     return p;
   },
 
+  /* ── images ── */
+
+  // Images are linked, never embedded: an https address on the organiser's own server.
+  // Returns a problem in plain words, or null when the link is fine (an empty link is fine too).
+  imageProblem(url){
+    const s = String(url ?? "").trim();
+    if (!s) return null;
+    let u;
+    try { u = new URL(s); } catch (e) { return "the image link isn't a web address"; }
+    if (u.protocol === "http:") return "the image link must start with https:// (phones block http images)";
+    if (u.protocol !== "https:") return "the image link must start with https://";
+    return null;
+  },
+  // Every image link in the game, once each, in the order they appear.
+  imageUrls(game){
+    const urls = [
+      ...game.locations.flatMap(l => (l.tasks || []).map(t => t.image)),
+      ...(game.clues || []).map(c => c.image),
+      ...(game.suspects || []).map(s => s.image),
+    ].map(u => String(u ?? "").trim()).filter(u => u && !Play.imageProblem(u));
+    return [...new Set(urls)];
+  },
+
   /* ── validation for the admin editor ── */
 
   validateTask(task){
     const problems = [];
     if (!Play.TYPES.includes(task.type)) problems.push("choose a challenge type");
     if (!String(task.prompt ?? "").trim()) problems.push("the question is empty");
+    const img = Play.imageProblem(task.image);
+    if (img) problems.push(img);
     if (task.type === "multiple_choice") {
       const opts = (task.options || []).map(o => String(o ?? "").trim());
       if (opts.filter(Boolean).length < 2) problems.push("needs at least two options");
@@ -185,9 +213,17 @@ const Play = {
     else if (Number.isInteger(duration) && reveal > duration) lines.push("Timing: the clues can't appear earlier than the start of the game");
     const clues = game.clues || [], suspects = game.suspects || [];
     if (!clues.length) lines.push("Clues: add at least one clue");
-    clues.forEach((c, i) => { if (!String(c.text ?? "").trim()) lines.push(`Clues: clue ${i + 1} is empty`); });
+    clues.forEach((c, i) => {
+      if (!String(c.text ?? "").trim()) lines.push(`Clues: clue ${i + 1} is empty`);
+      const img = Play.imageProblem(c.image);
+      if (img) lines.push(`Clues: clue ${i + 1}: ${img}`);
+    });
     if (!suspects.length) lines.push("Suspects: add at least one suspect");
-    suspects.forEach((s, i) => { if (!String(s.name ?? "").trim()) lines.push(`Suspects: suspect ${i + 1} has no name`); });
+    suspects.forEach((s, i) => {
+      if (!String(s.name ?? "").trim()) lines.push(`Suspects: suspect ${i + 1} has no name`);
+      const img = Play.imageProblem(s.image);
+      if (img) lines.push(`Suspects: suspect ${i + 1}: ${img}`);
+    });
     return lines;
   },
 

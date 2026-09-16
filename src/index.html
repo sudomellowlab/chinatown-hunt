@@ -82,6 +82,8 @@
     <h4>Export game file</h4>
     <div class="note" id="exportInfo"></div>
     <div class="row"><button class="btn primary" id="exportGame">Export game file</button></div>
+    <div class="row"><button class="btn" id="checkImages">Check image links</button></div>
+    <div class="note" id="imageInfo"></div>
     <div class="note" id="draftInfo"></div>
     <div class="row">
       <label class="btn" for="importGame">Import game file…</label>
@@ -120,6 +122,9 @@
       <label class="stack">Type
         <select id="tfType"><option value="multiple_choice">Multiple choice</option><option value="text">Typed answer</option><option value="number">Number</option></select></label>
       <label class="stack">Question <textarea id="tfPrompt" class="prose" rows="2"></textarea></label>
+      <label class="stack">Image link <span class="note inline">optional, https:// on your server</span>
+        <input type="text" id="tfImage" class="imglink" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/picture.jpg"></label>
+      <div class="imgprev" id="tfImagePrev"></div>
       <div id="tfMC">
         <div class="stack">Options <span class="note inline">select the correct one</span></div>
         <div id="tfOptions"></div>

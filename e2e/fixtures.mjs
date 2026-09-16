@@ -10,6 +10,11 @@ const APP = `${ORIGIN}/chinatown-hunt.html`;
 const ADMIN_FILE = new URL("../dist/chinatown-hunt-admin.html", import.meta.url);
 const PLAY_FILE = new URL("../dist/chinatown-hunt.html", import.meta.url);
 
+// Linked images are served from a fake https image server. Paths in `images.failing` return 404.
+export const IMG = "https://img.test";
+// A 4×3 PNG, enough for an <img> to load and have a size.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEElEQVR4nGNocFCAIwacHADRZwqBZaYHGAAAAABJRU5ErkJggg==", "base64");
+
 export const CEILING = 50;             // GAME.defaults.accuracyCeiling
 export const GOOD = 8;                 // accuracy for fixes that should be accepted
 
@@ -60,6 +65,14 @@ export async function createApp({ page, context }) {
     await context.route(`${ORIGIN}/**`, route =>
       route.fulfill({ contentType: "text/html; charset=utf-8", body: patchHtml(source()) }));
     await context.route(/tile\.openstreetmap\.org/, route => route.abort());   // map tiles: noise, not under test
+    const images = { failing: new Set(), requests: [] };
+    await context.route(`${IMG}/**`, route => {
+      const path = new URL(route.request().url()).pathname;
+      images.requests.push(path);
+      return images.failing.has(path)
+        ? route.fulfill({ status: 404, body: "not found" })
+        : route.fulfill({ contentType: "image/png", body: PNG });
+    });
     await context.grantPermissions(["geolocation"], { origin: ORIGIN });
 
     // Count watchPosition errors as the app receives them, without changing what it receives.
@@ -135,6 +148,7 @@ export async function createApp({ page, context }) {
         await expect(page.locator("#fixcount")).toHaveText(String(++fixes));
       },
 
+      images,
       reached: () => page.locator("#reached"),              // locations finished
       opened: () => page.locator(".pin.active, .pin.reached"),   // locations opened: in progress or finished
       sheet: () => page.locator("#sheet"),

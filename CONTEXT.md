@@ -95,10 +95,13 @@ first.
   and the content scrambled.
 - Challenges: multiple choice, typed answers, numbers, with free hints; the admin editor to
   add, edit, reorder and delete them. Answers are recorded but right/wrong is never shown.
+- Images: challenge questions, clues and suspects can each show a picture, linked by an
+  `https://` address on your own server. **Check image links** in the admin panel tests them
+  all. Phones download every picture when the team taps Begin.
 - Clues & suspects: you set the game length, how many minutes before the end they appear,
   and both lists. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 122 unit tests and 63 browser tests, run by CI on every push.
+- 124 unit tests and 72 browser tests, run by CI on every push.
 
 **Not built yet**
 1. **Real content.** (A "starting location" step was planned and then dropped: every

@@ -251,3 +251,23 @@ body:has(#sheet.up) #devbtn{bottom:auto;top:calc(env(safe-area-inset-top) + 80px
 #clueEdit li,#suspectEdit li{display:flex;flex-direction:column;gap:6px}
 #clueEdit .prose,#suspectEdit .prose{width:100%;margin:0;border:1px solid var(--ink);background:var(--sheet);padding:8px}
 #suspectEdit input.prose{font-weight:600;min-height:38px}
+
+/* ---------- linked pictures ---------- */
+figure.pic{margin:0 0 14px}
+figure.pic img{display:block;width:100%;height:auto;max-height:46vh;object-fit:contain;background:var(--linen-deep);border:1px solid var(--ink)}
+.picfail{border:1.5px dashed var(--slate);padding:12px 14px;font-size:15px;color:var(--slate);background:var(--linen)}
+.picfail span{display:block;margin-bottom:6px}
+#sheet .picfail button{margin-top:4px;min-height:44px}
+.picfail button{width:100%;min-height:44px;background:transparent;border:1px solid var(--ink);font-size:15px}
+.cluelist li p{margin:0 0 8px}
+.cluelist figure.pic img{max-height:40vh}
+.suspectlist li.withpic{display:flex;gap:12px;align-items:flex-start}
+.suspectlist figure.portrait{flex:0 0 88px;margin:0}
+.suspectlist figure.portrait img{width:88px;height:88px;object-fit:cover;max-height:none}
+.suspectlist figure.portrait .picfail{padding:6px;font-size:11px}
+.suspectlist .who{flex:1;min-width:0}
+.imgprev:empty{display:none}
+.imgprev{margin:4px 0 8px;font-size:12px}
+.imgprev.bad{color:var(--mark)}
+.imgprev img{display:block;max-width:100%;max-height:140px;border:1px solid var(--linen-deep);background:var(--linen)}
+input.imglink{font-family:var(--mono);font-size:12px}
