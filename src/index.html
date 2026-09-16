@@ -56,7 +56,7 @@
     <div class="rule"></div>
     <div class="place">the investigation</div>
     <h1 id="revealTitle"></h1>
-    <p class="lead">No more locations can be opened. Read the clues and work out which of the suspects did it.</p>
+    <p class="lead" id="revealLead"></p>
     <h2>Clues</h2>
     <ol id="clueList" class="cluelist"></ol>
     <h2>Suspects</h2>
@@ -68,7 +68,7 @@
   <div class="startcard">
     <div class="rule"></div>
     <h1 id="startTitle"></h1>
-    <p>Walk to each location on the map. When you arrive, it opens by itself.</p>
+    <p id="startIntro"></p>
     <p class="small">Your phone will ask to use your location. Allow it, or the map can't find you.</p>
     <button id="startBtn">Begin</button>
   </div>
@@ -93,6 +93,13 @@
   </div>
 
   <div class="grp">
+    <h4>Game</h4>
+    <label class="stack">Title <input type="text" id="titleEdit" class="plain"></label>
+    <label class="stack">Start screen text <span class="note inline">shown above the Begin button</span>
+      <textarea id="introEdit" class="prose" rows="3"></textarea></label>
+  </div>
+
+  <div class="grp">
     <h4>Map</h4>
     <label class="stack">Google Maps key <span class="note inline">Map Tiles API, from Google Cloud</span>
       <input type="text" id="mapKey" class="imglink" autocomplete="off" spellcheck="false" placeholder="Paste your API key"></label>
@@ -101,8 +108,15 @@
   </div>
 
   <div class="grp">
-    <h4>Locations</h4>
+    <h4>Locations <span class="note inline" id="locCount"></span></h4>
     <div class="row"><select id="capTarget"></select></div>
+    <label class="stack">Name <input type="text" id="locName" class="plain" autocomplete="off"></label>
+    <div class="row">
+      <button class="btn" id="locUp">↑ Earlier</button>
+      <button class="btn" id="locDown">↓ Later</button>
+      <button class="btn" id="locAdd">Add location</button>
+      <button class="btn warn" id="locDelete">Delete</button>
+    </div>
     <div class="note" id="poiInfo"></div>
     <div class="row">
       <button class="btn" id="poiPlace">Place on map</button>
@@ -167,6 +181,8 @@
       <label class="stack">Show clues with this many minutes left <input type="number" id="revealEdit" min="0" step="1"></label>
     </div>
     <div class="note" id="timingInfo"></div>
+    <label class="stack">Clues screen introduction
+      <textarea id="revealIntroEdit" class="prose" rows="2"></textarea></label>
 
     <h5>Clues <span class="note inline" id="clueCount"></span></h5>
     <ol id="clueEdit" class="tasklist"></ol>

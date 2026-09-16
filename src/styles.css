@@ -273,7 +273,7 @@ figure.pic img{display:block;width:100%;height:auto;max-height:46vh;object-fit:c
 input.imglink{font-family:var(--mono);font-size:12px}
 
 /* Keep the line breaks and blank lines the admin typed. */
-#sheettext,#prompt,#sheet p.hint,.cluelist li p,.suspectlist span,#reveal .lead{white-space:pre-line}
+#startIntro,#sheettext,#prompt,#sheet p.hint,.cluelist li p,.suspectlist span,#reveal .lead{white-space:pre-line}
 
 /* ---------- base map ---------- */
 .leaflet-control-attribution .gmaps{font-family:Roboto,Arial,sans-serif;font-weight:500;color:#3c4043;margin-right:6px}
@@ -281,3 +281,4 @@ input.imglink{font-family:var(--mono);font-size:12px}
 .maptype button{border:none;background:var(--sheet);color:var(--ink);font-size:13px;padding:0 12px;min-height:34px;min-width:0}
 .maptype button + button{border-left:1px solid var(--linen-deep)}
 .maptype button[aria-pressed="true"]{background:var(--ink);color:var(--sheet)}
+input.plain{font-family:var(--serif);font-size:15px;padding:9px;border:1px solid var(--ink);background:var(--linen);min-height:40px}

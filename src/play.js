@@ -197,7 +197,17 @@ const Play = {
 
   // Every problem in the game, as readable lines: "<location name>, challenge 2: mark the correct option".
   validateGame(game){
-    const lines = [], seen = new Set();
+    const lines = [], seen = new Set(), locIds = new Set();
+    if (!String(game.title ?? "").trim()) lines.push("Game: the title is empty");
+    if (!game.locations.length) lines.push("Locations: add at least one location");
+    game.locations.forEach((l, i) => {
+      const where = `Location ${i + 1}${String(l.name ?? "").trim() ? ` (${l.name})` : ""}`;
+      if (!String(l.name ?? "").trim()) lines.push(`${where}: give it a name`);
+      if (!l.id || locIds.has(l.id)) lines.push(`${where}: ${l.id ? "duplicate" : "missing"} id`);
+      locIds.add(l.id);
+      if (!(Number.isFinite(l.lat) && Math.abs(l.lat) <= 90 && Number.isFinite(l.lng) && Math.abs(l.lng) <= 180)) lines.push(`${where}: its position is invalid`);
+      if (l.radius != null && !(Number.isFinite(l.radius) && l.radius > 0)) lines.push(`${where}: the radius must be more than 0`);
+    });
     for (const l of game.locations) {
       (l.tasks || []).forEach((t, i) => {
         const where = `${l.name}, challenge ${i + 1}`;
@@ -233,6 +243,9 @@ const Play = {
     let id;
     do { id = `${prefix}-` + Math.floor(random() * 36 ** 8).toString(36).padStart(8, "0"); } while (used.has(id));
     return id;
+  },
+  newLocationId(game, random = Math.random){
+    return Play.newId("l", game.locations.map(l => l.id), random);
   },
   newTaskId(game, random = Math.random){
     return Play.newId("t", game.locations.flatMap(l => (l.tasks || []).map(t => t.id)), random);

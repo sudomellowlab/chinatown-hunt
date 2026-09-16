@@ -64,6 +64,7 @@ const hooks = {
   ringStyle: null,    // (id) → Leaflet path style, or null for the default look
   status: null,       // () → { dot, text } for the status strip, or null for the default
   mapSource: [],      // (mapStatus) whenever the base map changes or fails
+  pinCreated: [],     // (location, marker) each time a location's pin is (re)drawn
 };
 
 /* ════════════════════════════════════════════════════════════════════
@@ -208,16 +209,27 @@ typeControl.sync = () => {
 };
 setMapSource();
 
+// One numbered pin and one geofence ring per location, in list order. The participant file
+// draws them once; the admin file redraws them whenever locations are added, removed or reordered.
 const pins = {}, rings = {};
-GAME.locations.forEach((l, i) => {
-  rings[l.id] = L.circle([l.lat, l.lng], {
-    radius: Engine.radiusOf(l, state.cfg),
-    color:"#16202B", weight:1, opacity:.55, fillColor:"#16202B", fillOpacity:.05, dashArray:"3 5"
-  }).addTo(map);
-  pins[l.id] = L.marker([l.lat, l.lng], {
-    icon: L.divIcon({ className:"", html:`<div class="pin" data-id="${l.id}">${i+1}</div>`, iconSize:[26,26], iconAnchor:[13,13] })
-  }).addTo(map).bindTooltip(l.name, { direction:"top", offset:[0,-14] });
-});
+function rebuildLocations(){
+  for (const id of Object.keys(pins)) { map.removeLayer(pins[id]); map.removeLayer(rings[id]); delete pins[id]; delete rings[id]; }
+  GAME.locations.forEach((l, i) => {
+    rings[l.id] = L.circle([l.lat, l.lng], {
+      radius: Engine.radiusOf(l, state.cfg),
+      color:"#16202B", weight:1, opacity:.55, fillColor:"#16202B", fillOpacity:.05, dashArray:"3 5"
+    }).addTo(map);
+    const pin = document.createElement("div");
+    pin.className = "pin"; pin.dataset.id = l.id; pin.textContent = i + 1;
+    pins[l.id] = L.marker([l.lat, l.lng], {
+      icon: L.divIcon({ className:"", html:pin, iconSize:[26,26], iconAnchor:[13,13] })
+    }).addTo(map).bindTooltip(document.createTextNode(l.name?.trim() || "(unnamed)"), { direction:"top", offset:[0,-14] });
+    hooks.pinCreated.forEach(fn => fn(l, pins[l.id]));
+  });
+  state.progress = Play.reconcile(state.progress, GAME);
+  GAME.locations.forEach(l => styleLocation(l.id));
+}
+rebuildLocations();
 
 let youMarker = null, youAcc = null;
 function drawYou(fix, simulated){
@@ -293,7 +305,6 @@ function styleRing(id){
   else if (state.progress.active === id) ring.setStyle({ color:"#8A6D2F", fillColor:"#8A6D2F", fillOpacity:.12, weight:2, dashArray:null });
   else ring.setStyle({ color:"#16202B", fillColor:"#16202B", fillOpacity:.05, weight:1, dashArray:"3 5" });
 }
-GAME.locations.forEach(l => styleLocation(l.id));
 
 /* ════════════════════════════════════════════════════════════════════
    RENDER
@@ -512,6 +523,7 @@ function renderReveal(preview = false){
   $("reveal").hidden = !show;
   if (!show) return;
   $("revealTitle").textContent = GAME.title;
+  $("revealLead").textContent = GAME.revealIntro ?? "";
   $("clueList").replaceChildren(...(GAME.clues || []).map((c, i) =>
     h("li", {}, h("p", {}, c.text), picture(c.image, "clueimg", `Picture for clue ${i + 1}`))));
   $("suspectList").replaceChildren(...(GAME.suspects || []).map(s =>
@@ -560,6 +572,7 @@ function stopReal(){
    ════════════════════════════════════════════════════════════════════ */
 function showStart(){
   $("startTitle").textContent = GAME.title;
+  $("startIntro").textContent = GAME.intro ?? "";
   $("startBtn").textContent = state.startedAt ? "Continue" : "Begin";
   $("start").hidden = false;
 }
@@ -594,6 +607,6 @@ renderReveal();
 showStart();
 
 export { BUILD, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing, styleLocation,
-  mapStatus, setMapSource,
+  mapStatus, setMapSource, rebuildLocations,
   $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, submitAnswer, finishActive, locationById,
   startReal, stopReal, hideStart };

@@ -6,6 +6,9 @@
    that sealed copy.
    COORDINATES, TEXT, CHALLENGES, CLUES AND SUSPECTS BELOW ARE PLACEHOLDERS.
 
+   Locations are listed in play-map order; the pin numbers follow it.
+   Location ids are permanent too: completed locations are keyed by them.
+
    Challenge (task) shape — ids are permanent, answers are keyed by them:
      { id, type:"multiple_choice", prompt, options:[…], answer:<index>, hint }
      { id, type:"text",   prompt, accept:["…", "…"], hint }
@@ -21,6 +24,9 @@
 const GAME = {
   id: "chinatown-historical-hunt",
   title: "Historical Hunt — Chinatown",
+  // Shown on the start screen, and at the top of the clues & suspects screen.
+  intro: "Walk to each location on the map. When you arrive, it opens by itself.",
+  revealIntro: "No more locations can be opened. Read the clues and work out which of the suspects did it.",
   durationMinutes: 120,
   revealMinutes: 20,
   defaults: { radius: 25, accuracyCeiling: 50, consecutiveFixes: 3 },

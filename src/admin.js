@@ -4,7 +4,7 @@ import { Poi } from "./poi.js";
 import { Play } from "./play.js";
 import { Pack } from "./pack.js";
 import { GAME } from "./game.js";
-import { store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing, styleLocation, mapStatus, setMapSource,
+import { store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing, styleLocation, mapStatus, setMapSource, rebuildLocations,
   $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, submitAnswer, finishActive, locationById,
   startReal, stopReal, hideStart } from "./app.js";
 
@@ -35,23 +35,21 @@ const DEFAULT_GAME = structuredClone(GAME);
 const draft = { notice:"", error:"" };
 const defaultLocation = id => DEFAULT_GAME.locations.find(l => l.id === id);
 
-// Put saved content into the live game, matched by location id, and move pins and rings to suit.
+// Put saved content into the live game. The pins are redrawn once the admin tools are wired up (see LOCATIONS).
 function applyContent(game){
-  for (const live of GAME.locations) {
-    const saved = game.locations.find(l => l.id === live.id);
-    if (!saved) continue;
-    live.lat = saved.lat; live.lng = saved.lng; live.radius = saved.radius ?? undefined;
-    live.arrivalText = saved.arrivalText ?? "";
-    live.tasks = structuredClone(saved.tasks || []);
-    pins[live.id].setLatLng([live.lat, live.lng]);
-    rings[live.id].setLatLng([live.lat, live.lng]).setRadius(Engine.radiusOf(live, state.cfg));
-  }
+  GAME.locations = game.locations.map(l => ({
+    ...structuredClone(l), radius: l.radius ?? undefined, arrivalText: l.arrivalText ?? "", tasks: structuredClone(l.tasks || []),
+  }));
+  for (const k of ["title", "intro", "revealIntro"]) if (typeof game[k] === "string") GAME[k] = game[k];
   // Drafts saved before clues & timing existed keep the defaults for those.
   for (const k of ["durationMinutes", "revealMinutes"]) if (Number.isFinite(game[k])) GAME[k] = game[k];
   for (const k of ["clues", "suspects"]) if (Array.isArray(game[k])) GAME[k] = structuredClone(game[k]);
   if (game.map && typeof game.map === "object") GAME.map = { ...GAME.map, ...game.map };
   state.clockMinutes = GAME.durationMinutes;
-  map.fitBounds(GAME.locations.map(l => [l.lat, l.lng]), { padding:[40, 40], maxZoom:18 });
+  fitToLocations();
+}
+function fitToLocations(){
+  if (GAME.locations.length) map.fitBounds(GAME.locations.map(l => [l.lat, l.lng]), { padding:[40, 40], maxZoom:18 });
 }
 function saveDraft(){
   try { store.setItem(DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), game: gameForExport() })); draft.error = ""; }
@@ -244,10 +242,16 @@ $("freeze").onclick = () => { feed.frozen = !feed.frozen; setSrcButtons(); rende
 
 /* jump controls */
 const jumpSel = $("jump"), capSel = $("capTarget");
-GAME.locations.forEach(l => {
-  jumpSel.insertAdjacentHTML("beforeend", `<option value="${l.id}">${l.name}</option>`);
-  capSel.insertAdjacentHTML("beforeend", `<option value="${l.id}">${l.name}</option>`);
-});
+// Both location lists, numbered as the pins are. Keeps (or sets) the selected location.
+function refreshLocationSelects(selectId = capSel.value){
+  const opts = () => GAME.locations.map((l, i) => new Option(`${i + 1}. ${l.name?.trim() || "(unnamed)"}`, l.id));
+  capSel.replaceChildren(...opts());
+  capSel.value = GAME.locations.some(l => l.id === selectId) ? selectId : (GAME.locations[0]?.id ?? "");
+  const jumpValue = jumpSel.value;
+  jumpSel.replaceChildren(new Option("Jump to a location…", ""), ...opts());
+  jumpSel.value = GAME.locations.some(l => l.id === jumpValue) ? jumpValue : "";
+}
+refreshLocationSelects();
 function jumpTo(id, offsetM){
   const l = GAME.locations.find(x => x.id === id); if (!l) return;
   const d = (offsetM || 0) / M_PER_DEG;
@@ -352,13 +356,18 @@ const isMoved = l => { const d = defaultLocation(l.id); return !d || d.lat !== l
 
 function renderPoi(){
   const l = GAME.locations.find(x => x.id === capSel.value); if (!l) return;
-  const r = Engine.radiusOf(l, state.cfg);
+  const r = Engine.radiusOf(l, state.cfg), i = GAME.locations.indexOf(l), isNew = !defaultLocation(l.id);
+  if (document.activeElement !== $("locName")) $("locName").value = l.name ?? "";
+  $("locCount").textContent = `${GAME.locations.length}, pins numbered in this order`;
+  $("locUp").disabled = i === 0;
+  $("locDown").disabled = i === GAME.locations.length - 1;
+  $("locDelete").disabled = GAME.locations.length < 2;
   $("poiInfo").textContent =
-    `${l.lat.toFixed(6)}, ${l.lng.toFixed(6)} · radius ${r} m · ${isMoved(l) ? "moved" : "as in the default game"}` +
+    `${l.lat.toFixed(6)}, ${l.lng.toFixed(6)} · radius ${r} m · ${isNew ? "new location" : isMoved(l) ? "moved" : "as in the default game"}` +
     (wideScreen.matches ? "\nDrag any pin on the map to move it." : "") +
     (draft.notice ? `\n${draft.notice}` : "");
   $("capRad").value = r; $("capRadO").textContent = r + " m";
-  $("poiRevert").disabled = !isMoved(l);
+  $("poiRevert").disabled = isNew || !isMoved(l);
   renderTasks();
   $("poibarText").textContent = `Placing ${l.name} · radius ${r} m`;
   renderExport();
@@ -392,16 +401,77 @@ function syncPinDragging(){
     on ? pins[l.id].dragging.enable() : pins[l.id].dragging.disable();
   });
 }
-GAME.locations.forEach(l => {
-  pins[l.id].on("dragstart", () => {
+// Every pin, including ones drawn later for added or reordered locations, gets the editing handlers.
+hooks.pinCreated.push((l, pin) => {
+  pin.on("dragstart", () => {
     if (capSel.value !== l.id) { capSel.value = l.id; renderPoi(); }
   });
-  pins[l.id].on("drag", e => rings[l.id].setLatLng(e.latlng));      // the geofence follows the pin
-  pins[l.id].on("dragend", () => {
-    const ll = pins[l.id].getLatLng();
+  pin.on("drag", e => rings[l.id].setLatLng(e.latlng));      // the geofence follows the pin
+  pin.on("dragend", () => {
+    const ll = pin.getLatLng();
     setPoi(l.id, { lat:ll.lat, lng:ll.lng });
   });
+  // With the panel open, clicking a pin selects that location for editing (not while placing another).
+  pin.on("click", () => {
+    if (!drawerOpen || poiMode || capSel.value === l.id) return;
+    capSel.value = l.id; renderPoi();
+  });
 });
+rebuildLocations();
+fitToLocations();
+
+// After adding, removing or reordering locations: redraw pins, relist, save.
+function locationsChanged(selectId){
+  endPlacing();
+  rebuildLocations(); syncPinDragging();
+  refreshLocationSelects(selectId);
+  save(); saveDraft(); renderSheet(); renderPoi(); render();
+}
+$("locAdd").onclick = () => {
+  const c = map.getCenter();
+  const l = { id: Play.newLocationId(GAME), name: `New location ${GAME.locations.length + 1}`,
+    lat: round6(c.lat), lng: round6(c.lng), radius: GAME.defaults.radius, arrivalText: "", tasks: [] };
+  GAME.locations.push(l);
+  locationsChanged(l.id);
+  draft.notice = "Added at the centre of the map. Drag its pin into place.";
+  renderPoi();
+  $("locName").focus(); $("locName").select();
+};
+$("locDelete").onclick = () => {
+  const i = GAME.locations.findIndex(l => l.id === capSel.value); if (i < 0 || GAME.locations.length < 2) return;
+  const l = GAME.locations[i], n = (l.tasks || []).length;
+  if (!confirm(`Delete ${l.name || "this location"}${n ? ` and its ${n} challenge${n === 1 ? "" : "s"}` : ""}? Export first if you might want it back.`)) return;
+  GAME.locations.splice(i, 1);
+  locationsChanged(GAME.locations[Math.min(i, GAME.locations.length - 1)].id);
+};
+for (const [id, dir] of [["locUp", -1], ["locDown", +1]]) {
+  $(id).onclick = () => {
+    const i = GAME.locations.findIndex(l => l.id === capSel.value), j = i + dir;
+    if (i < 0 || j < 0 || j >= GAME.locations.length) return;
+    [GAME.locations[i], GAME.locations[j]] = [GAME.locations[j], GAME.locations[i]];
+    locationsChanged(capSel.value);
+  };
+}
+$("locName").addEventListener("input", e => {
+  const l = GAME.locations.find(x => x.id === capSel.value); if (!l) return;
+  l.name = e.target.value;
+  pins[l.id]?.setTooltipContent(document.createTextNode(l.name?.trim() || "(unnamed)"));
+  refreshLocationSelects(l.id);
+  saveDraft(); render();
+});
+
+// Game title, start screen and clues screen wording.
+function renderGameText(){
+  for (const [id, key] of [["titleEdit", "title"], ["introEdit", "intro"], ["revealIntroEdit", "revealIntro"]])
+    if (document.activeElement !== $(id)) $(id).value = GAME[key] ?? "";
+}
+for (const [id, key] of [["titleEdit", "title"], ["introEdit", "intro"], ["revealIntroEdit", "revealIntro"]]) {
+  $(id).addEventListener("input", e => {
+    GAME[key] = e.target.value;
+    if (key === "title") document.title = `${GAME.title} · Admin`;
+    saveDraft(); renderReveal();
+  });
+}
 
 capSel.onchange = () => {
   const wasPlacing = poiMode;
@@ -412,11 +482,6 @@ capSel.onchange = () => {
 };
 $("poiPlace").onclick = startPlacing;
 $("poiCoords").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("poiApply").click(); } });
-// With the panel open, clicking a pin selects that location for editing (not while placing another).
-GAME.locations.forEach(l => pins[l.id].on("click", () => {
-  if (!drawerOpen || poiMode || capSel.value === l.id) return;
-  capSel.value = l.id; renderPoi();
-}));
 $("poiDone").onclick = () => { endPlacing(); toggleDrawer(true); };
 $("poiApply").onclick = () => {
   const id = capSel.value;
@@ -983,5 +1048,6 @@ function clearProgress(){
 // The game drew its screens before the draft was applied above; redraw them with the admin's content.
 renderSheet();
 setMapSource(); renderMap();
-renderPoi(); renderMystery(); renderExport(); setSrcButtons(); renderLog(); render(); checkReveal();
+document.title = `${GAME.title} · Admin`;
+renderGameText(); renderPoi(); renderMystery(); renderExport(); setSrcButtons(); renderLog(); render(); checkReveal();
 if (wideScreen.matches) toggleDrawer(true);      // on a computer, open with the tools showing

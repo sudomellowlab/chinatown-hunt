@@ -6,12 +6,13 @@ import { Play } from "../src/play.js";
 const mc   = { id: "mc", type: "multiple_choice", prompt: "Which?", options: ["A", "B", "C"], answer: 1, hint: "Not A" };
 const txt  = { id: "tx", type: "text", prompt: "Who?", accept: ["Hokkien", "hokkien people"] };
 const num  = { id: "nm", type: "number", prompt: "When?", answer: 1842, tolerance: 1 };
-const loc  = { id: "thk", name: "Thian Hock Keng", tasks: [mc, txt, num] };
-const other = { id: "amoy", name: "Amoy Street", tasks: [{ id: "a1", type: "text", prompt: "?", accept: ["x"] }] };
-const empty = { id: "green", name: "Telok Ayer Green", tasks: [] };
+const at = { lat: 1.28, lng: 103.84 };
+const loc  = { id: "thk", name: "Thian Hock Keng", ...at, tasks: [mc, txt, num] };
+const other = { id: "amoy", name: "Amoy Street", ...at, tasks: [{ id: "a1", type: "text", prompt: "?", accept: ["x"] }] };
+const empty = { id: "green", name: "Telok Ayer Green", ...at, tasks: [] };
 const MIN = 60000;
 const game = {
-  durationMinutes: 120, revealMinutes: 20, locations: [loc, other, empty],
+  title: "Test hunt", durationMinutes: 120, revealMinutes: 20, locations: [loc, other, empty],
   clues: [{ id: "c1", text: "A clue" }], suspects: [{ id: "s1", name: "Someone", blurb: "" }],
 };
 
@@ -216,7 +217,7 @@ describe("validation", () => {
   });
 
   test("validateGame says where each problem is, including duplicate ids", () => {
-    const bad = { ...game, locations: [{ name: "Amoy Street", tasks: [txt, { ...mc, id: "tx", answer: null }] }] };
+    const bad = { ...game, locations: [{ id: "amoy", name: "Amoy Street", ...at, tasks: [txt, { ...mc, id: "tx", answer: null }] }] };
     assert.deepEqual(Play.validateGame(bad), [
       "Amoy Street, challenge 2: duplicate id tx",
       "Amoy Street, challenge 2: mark the correct option",
@@ -255,6 +256,24 @@ describe("validation", () => {
     const g = { locations: [{ tasks: [{ image: "https://a.sg/1.jpg" }, { image: "" }, { image: "http://bad" }] }],
       clues: [{ image: " https://a.sg/2.jpg " }, {}], suspects: [{ image: "https://a.sg/1.jpg" }] };
     assert.deepEqual(Play.imageUrls(g), ["https://a.sg/1.jpg", "https://a.sg/2.jpg"]);
+  });
+
+  test("the title and every location must be complete", () => {
+    assert.deepEqual(Play.validateGame({ ...game, title: " ", locations: [] }),
+      ["Game: the title is empty", "Locations: add at least one location"]);
+    assert.deepEqual(Play.validateGame({ ...game, locations: [
+      { id: "a", name: " ", ...at, tasks: [] },
+      { id: "a", name: "Twin", lat: 95, lng: 103, radius: 0, tasks: [] },
+      { name: "No id", lat: NaN, lng: 103, tasks: [] },
+    ] }), [
+      "Location 1: give it a name",
+      "Location 2 (Twin): duplicate id",
+      "Location 2 (Twin): its position is invalid",
+      "Location 2 (Twin): the radius must be more than 0",
+      "Location 3 (No id): missing id",
+      "Location 3 (No id): its position is invalid",
+    ]);
+    assert.match(Play.newLocationId(game), /^l-[0-9a-z]{8}$/);
   });
 
   test("new ids never repeat one already taken", () => {

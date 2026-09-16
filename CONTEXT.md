@@ -9,8 +9,8 @@ Last updated 16 September 2026, after step 4 (the timed clues & suspects screen)
 ## 1. What this is
 
 A GPS treasure hunt for Telok Ayer / Ann Siang Hill in Singapore. A team walks with one
-phone; walking inside a location's circle opens it and presents its challenges one at a
-time. Eight locations, two hours. Near the end of each team's clock a screen shows the
+phone (their own); walking inside a location's circle opens it and presents its challenges one at a
+time. Two hours by default. Near the end of each team's clock a screen shows the
 clues and suspects. No points are shown on this site: scoring is done in LoQuiz.
 
 **No server anywhere.** There are two HTML files, and that is the whole product:
@@ -90,7 +90,9 @@ first.
   seconds within 60 m.
 - Walk recorder: records every GPS fix, exports as JSON, replays in-app, plus a
   command-line replay that reports per location and sweeps radius/accuracy settings.
-- Admin location editor: drag pins, paste coordinates or a Google Maps link, set radius.
+- Admin location editor: add, rename, reorder and delete locations; drag pins, paste
+  coordinates or a Google Maps link, set radius. The game title, start screen text and clues
+  screen text are editable too.
 - **Export game file** producing the participant file, with the admin tools stripped out
   and the content scrambled.
 - Challenges: multiple choice, typed answers, numbers, with free hints; the admin editor to
@@ -105,11 +107,11 @@ first.
 - Clues & suspects: you set the game length, how many minutes before the end they appear,
   and both lists. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 124 unit tests and 83 browser tests, run by CI on every push.
+- 125 unit tests and 88 browser tests, run by CI on every push.
 
 **Not built yet**
-1. **Real content.** (A "starting location" step was planned and then dropped: every
-   location is open from the start.) All eight locations still hold placeholder coordinates and
+1. **Real content.** Nothing else blocks entering it. (A "starting location" step was
+   planned and then dropped: every location is open from the start.) All eight locations still hold placeholder coordinates and
    placeholder challenges.
 
 **Before going live on your server**
