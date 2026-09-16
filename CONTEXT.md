@@ -110,9 +110,9 @@ first.
 - 125 unit tests and 88 browser tests, run by CI on every push.
 
 **Not built yet**
-1. **Real content.** Nothing else blocks entering it. (A "starting location" step was
-   planned and then dropped: every location is open from the start.) All eight locations still hold placeholder coordinates and
-   placeholder challenges.
+1. **Real content.** The default game is placeholders: eight made-up locations, challenges,
+   clues and suspects. Nothing else blocks entering the real ones. (A "starting location"
+   step was planned and then dropped: every location is open from the start.)
 
 **Before going live on your server**
 - Add your website's address (e.g. `https://your-domain/*`) to the Google API key's
