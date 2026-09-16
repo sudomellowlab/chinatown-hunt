@@ -24,6 +24,10 @@ const GAME = {
   durationMinutes: 120,
   revealMinutes: 20,
   defaults: { radius: 25, accuracyCeiling: 50, consecutiveFixes: 3 },
+  // Base map. With a Google Maps Platform key (Map Tiles API) the map shows Google's map;
+  // without one, OpenStreetMap, which is fine for testing but not allowed for paid events.
+  // Never put a real key here: the repository is public. Admins paste it into the admin panel.
+  map: { googleKey: "" },
   locations: [
     { id:"telok-ayer-green", name:"Telok Ayer Green", lat:1.28035, lng:103.84705, radius:25,
       arrivalText:"You are standing on what was once the shoreline. Telok Ayer means 'water bay' — every step east of here was sea until the reclamation of the 1880s.",

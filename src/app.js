@@ -63,6 +63,7 @@ const hooks = {
   hidden: [],         // () when the page is hidden
   ringStyle: null,    // (id) → Leaflet path style, or null for the default look
   status: null,       // () → { dot, text } for the status strip, or null for the default
+  mapSource: [],      // (mapStatus) whenever the base map changes or fails
 };
 
 /* ════════════════════════════════════════════════════════════════════
@@ -71,10 +72,141 @@ const hooks = {
 // Opens framed on the game's own locations, wherever they have been set.
 const map = L.map("map", { zoomControl:false, attributionControl:true })
   .fitBounds(GAME.locations.map(l => [l.lat, l.lng]), { padding:[40, 40], maxZoom:18 });
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19, attribution: "© OpenStreetMap"
-}).addTo(map);
+map.attributionControl.setPrefix(false);
 L.control.zoom({ position:"topright" }).addTo(map);
+
+/* ════════════════════════════════════════════════════════════════════
+   BASE MAP — Google's map through the Map Tiles API when the game has a
+   key, OpenStreetMap otherwise or whenever Google refuses. Tiles need a
+   session token, valid about two weeks, which each device reuses.
+   Google requires "Google Maps" and the data copyright on the map; the
+   copyright comes from the viewport endpoint and changes as the map moves.
+   ════════════════════════════════════════════════════════════════════ */
+const GOOGLE = "https://tile.googleapis.com";
+const OSM_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const mapStatus = { kind:"none", type:"roadmap", problem:null };   // kind: google | osm
+let baseLayer = null, mapGen = 0, credit = "";
+const mapKey = () => String(GAME.map?.googleKey ?? "").trim();
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+try { if (store.getItem("chinatown-hunt:maptype") === "satellite") mapStatus.type = "satellite"; } catch(e){}
+
+async function googleSession(key, mapType){
+  const cacheKey = `chinatown-hunt:gsession:${mapType}`;
+  try {
+    const c = JSON.parse(store.getItem(cacheKey));
+    if (c && c.key === key && Number(c.expiry) * 1000 > Date.now() + 3600000) return c.session;
+  } catch(e){}
+  let res;
+  try {
+    res = await fetch(`${GOOGLE}/v1/createSession?key=${encodeURIComponent(key)}`, {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ mapType, language:"en-GB", region:"SG" }),
+    });
+  } catch(e){ throw new Error("couldn't reach Google (no connection?)"); }
+  if (!res.ok) throw new Error(res.status === 403 || res.status === 400
+    ? `Google refused the key (${res.status}). Check it, and that its restrictions allow this website and the Map Tiles API`
+    : `Google map service error (${res.status})`);
+  const d = await res.json().catch(() => ({}));
+  if (!d.session) throw new Error("Google sent no map session");
+  try { store.setItem(cacheKey, JSON.stringify({ key, session:d.session, expiry:d.expiry })); } catch(e){}
+  return d.session;
+}
+function forgetGoogleSessions(){
+  for (const t of ["roadmap", "satellite"]) { try { store.removeItem(`chinatown-hunt:gsession:${t}`); } catch(e){} }
+}
+
+function swapLayer(layer){
+  if (baseLayer) map.removeLayer(baseLayer);
+  baseLayer = layer.addTo(map);
+  baseLayer.bringToBack();
+}
+function useOsm(problem){
+  mapStatus.kind = "osm"; mapStatus.problem = problem;
+  swapLayer(L.tileLayer(OSM_URL, { maxZoom:19, attribution:"© OpenStreetMap" }));
+  map.setMaxZoom(19);
+  setCredit("");
+  typeControl.remove();
+  hooks.mapSource.forEach(h => h(mapStatus));
+}
+function useGoogle(key, session, gen){
+  mapStatus.kind = "google"; mapStatus.problem = null;
+  let loaded = 0, failed = 0;
+  const layer = L.tileLayer(`${GOOGLE}/v1/2dtiles/{z}/{x}/{y}?session=${encodeURIComponent(session)}&key=${encodeURIComponent(key)}`,
+    { maxZoom:21, maxNativeZoom:21 });
+  layer.on("tileload", () => { loaded++; });
+  // Tiles refused outright (e.g. the key doesn't allow this website): fall back rather than show a blank map.
+  layer.on("tileerror", () => {
+    if (++failed >= 4 && !loaded && gen === mapGen) {
+      forgetGoogleSessions();
+      useOsm("Google map images didn't load. Check the key's website and API restrictions");
+    }
+  });
+  swapLayer(layer);
+  map.setMaxZoom(21);
+  typeControl.addTo(map);
+  typeControl.sync();
+  updateCredit(key, session, gen);
+  hooks.mapSource.forEach(h => h(mapStatus));
+}
+// Apply the game's map settings: Google when there's a working key, OpenStreetMap otherwise.
+async function setMapSource(){
+  const gen = ++mapGen, key = mapKey();
+  if (!key) return useOsm(null);
+  try {
+    const session = await googleSession(key, mapStatus.type);
+    if (gen === mapGen) useGoogle(key, session, gen);
+  } catch(e){
+    if (gen === mapGen) { forgetGoogleSessions(); useOsm(e.message); }
+  }
+}
+
+function setCredit(text){
+  map.attributionControl.setPrefix(mapStatus.kind === "google" ? '<span class="gmaps">Google Maps</span>' : false);
+  if (credit) map.attributionControl.removeAttribution(credit);
+  credit = text ? escapeHtml(text) : "";
+  if (credit) map.attributionControl.addAttribution(credit);
+}
+let creditTimer = null, creditHandler = null;
+function updateCredit(key, session, gen){
+  setCredit("");
+  const fetchCredit = async () => {
+    if (gen !== mapGen || mapStatus.kind !== "google") return;
+    const b = map.getBounds();
+    const q = new URLSearchParams({ session, key, zoom: String(Math.round(map.getZoom())),
+      north: b.getNorth().toFixed(6), south: b.getSouth().toFixed(6), east: b.getEast().toFixed(6), west: b.getWest().toFixed(6) });
+    try {
+      const res = await fetch(`${GOOGLE}/tile/v1/viewport?${q}`);
+      const d = res.ok ? await res.json() : null;
+      if (gen === mapGen && d?.copyright != null) setCredit(d.copyright);
+    } catch(e){}
+  };
+  if (creditHandler) map.off("moveend", creditHandler);
+  creditHandler = () => { clearTimeout(creditTimer); creditTimer = setTimeout(fetchCredit, 400); };
+  map.on("moveend", creditHandler);
+  fetchCredit();
+}
+
+// Map / Satellite switch, shown only with Google's map.
+const typeControl = L.control({ position:"topright" });
+typeControl.onAdd = () => {
+  const box = L.DomUtil.create("div", "maptype leaflet-bar");
+  box.innerHTML = '<button type="button" data-type="roadmap">Map</button><button type="button" data-type="satellite">Satellite</button>';
+  L.DomEvent.disableClickPropagation(box);
+  box.addEventListener("click", e => {
+    const type = e.target.dataset?.type;
+    if (!type || type === mapStatus.type) return;
+    mapStatus.type = type;
+    try { store.setItem("chinatown-hunt:maptype", type); } catch(err){}
+    typeControl.sync();
+    setMapSource();
+  });
+  return box;
+};
+typeControl.sync = () => {
+  typeControl.getContainer()?.querySelectorAll("button").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.type === mapStatus.type)));
+};
+setMapSource();
 
 const pins = {}, rings = {};
 GAME.locations.forEach((l, i) => {
@@ -462,5 +594,6 @@ renderReveal();
 showStart();
 
 export { BUILD, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing, styleLocation,
+  mapStatus, setMapSource,
   $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, submitAnswer, finishActive, locationById,
   startReal, stopReal, hideStart };

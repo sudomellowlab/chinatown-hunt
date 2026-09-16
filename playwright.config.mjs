@@ -19,6 +19,6 @@ export default defineConfig({
     { name: "phone", use: { ...devices["Pixel 7"] }, testIgnore: ADMIN },
     // Admin work: a laptop-sized desktop browser. Replay and export run here too.
     { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
-      testMatch: [ADMIN, /(recorder|images)\.spec\.mjs$/] },
+      testMatch: [ADMIN, /(recorder|images|googlemap)\.spec\.mjs$/] },
   ],
 });

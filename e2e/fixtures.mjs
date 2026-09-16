@@ -64,7 +64,32 @@ export async function createApp({ page, context }) {
     let patchHtml = html => html;
     await context.route(`${ORIGIN}/**`, route =>
       route.fulfill({ contentType: "text/html; charset=utf-8", body: patchHtml(source()) }));
-    await context.route(/tile\.openstreetmap\.org/, route => route.abort());   // map tiles: noise, not under test
+    // Map tiles. OpenStreetMap is served a blank tile and counted. Google's Map Tiles API is faked:
+    // keys starting "bad" are refused, keys starting "notiles" get sessions but no tiles.
+    const osm = { requests: 0 };
+    await context.route(/tile\.openstreetmap\.org/, route => { osm.requests++; return route.fulfill({ contentType: "image/png", body: PNG }); });
+    const google = { sessions: [], tiles: [], viewports: 0, copyright: "Map data ©2026 Google" };
+    await context.route("https://tile.googleapis.com/**", async route => {
+      const req = route.request(), url = new URL(req.url()), key = url.searchParams.get("key") || "";
+      if (url.pathname === "/v1/createSession") {
+        const body = JSON.parse(req.postData() || "{}");
+        google.sessions.push({ key, ...body });
+        if (key.startsWith("bad")) return route.fulfill({ status: 403, contentType: "application/json", body: '{"error":{"code":403}}' });
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+          session: `sess-${body.mapType}-${google.sessions.length}`, expiry: String(Math.floor(Date.now() / 1000) + 14 * 86400),
+          tileWidth: 256, tileHeight: 256, imageFormat: "png" }) });
+      }
+      if (url.pathname.startsWith("/v1/2dtiles/")) {
+        google.tiles.push({ path: url.pathname, session: url.searchParams.get("session"), key });
+        if (key.startsWith("notiles")) return route.fulfill({ status: 403, body: "forbidden" });
+        return route.fulfill({ contentType: "image/png", body: PNG });
+      }
+      if (url.pathname === "/tile/v1/viewport") {
+        google.viewports++;
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify({ copyright: google.copyright, maxZoomRects: [] }) });
+      }
+      return route.fulfill({ status: 404, body: "" });
+    });
     const images = { failing: new Set(), requests: [] };
     await context.route(`${IMG}/**`, route => {
       const path = new URL(route.request().url()).pathname;
@@ -148,7 +173,7 @@ export async function createApp({ page, context }) {
         await expect(page.locator("#fixcount")).toHaveText(String(++fixes));
       },
 
-      images,
+      images, osm, google,
       reached: () => page.locator("#reached"),              // locations finished
       opened: () => page.locator(".pin.active, .pin.reached"),   // locations opened: in progress or finished
       sheet: () => page.locator("#sheet"),

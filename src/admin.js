@@ -4,7 +4,7 @@ import { Poi } from "./poi.js";
 import { Play } from "./play.js";
 import { Pack } from "./pack.js";
 import { GAME } from "./game.js";
-import { store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing, styleLocation,
+import { store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing, styleLocation, mapStatus, setMapSource,
   $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, submitAnswer, finishActive, locationById,
   startReal, stopReal, hideStart } from "./app.js";
 
@@ -49,6 +49,7 @@ function applyContent(game){
   // Drafts saved before clues & timing existed keep the defaults for those.
   for (const k of ["durationMinutes", "revealMinutes"]) if (Number.isFinite(game[k])) GAME[k] = game[k];
   for (const k of ["clues", "suspects"]) if (Array.isArray(game[k])) GAME[k] = structuredClone(game[k]);
+  if (game.map && typeof game.map === "object") GAME.map = { ...GAME.map, ...game.map };
   state.clockMinutes = GAME.durationMinutes;
   map.fitBounds(GAME.locations.map(l => [l.lat, l.lng]), { padding:[40, 40], maxZoom:18 });
 }
@@ -496,6 +497,8 @@ function renderExport(){
   $("draftInfo").textContent = draft.error || "Your changes are saved in this browser as you go.";
   $("draftInfo").classList.toggle("bad", !!draft.error);
   $("exportGame").disabled = !canExport || problems.length > 0;
+  if (canExport && !problems.length && mapStatus.kind !== "google")
+    $("exportInfo").textContent += "\nNote: this file will show OpenStreetMap, not Google Maps. Add a working Google Maps key under Map first.";
 }
 $("exportGame").onclick = () => {
   if (Play.validateGame(gameForExport()).length) return;
@@ -769,6 +772,35 @@ $("previewReveal").onclick = () => { renderReveal(true); previewClose.hidden = f
 previewClose.onclick = () => { previewClose.hidden = true; renderReveal(); };
 
 /* ════════════════════════════════════════════════════════════════════
+   MAP — the Google Maps key. It is saved with the draft and goes into the
+   exported file (any web map's key is visible to its users; Google's
+   website restriction on the key is what protects it).
+   ════════════════════════════════════════════════════════════════════ */
+function renderMap(){
+  const input = $("mapKey"), key = String(GAME.map?.googleKey ?? "").trim();
+  if (document.activeElement !== input) input.value = key;
+  const info = $("mapInfo");
+  const text =
+    mapStatus.kind === "google" ? `Google Maps is on (${mapStatus.type === "satellite" ? "satellite" : "map"} view). Teams will see Google's map.` :
+    mapStatus.problem ? `Using OpenStreetMap because Google didn't work: ${mapStatus.problem}.` :
+    key ? "Connecting to Google…" :
+    "No key: the map uses OpenStreetMap. That's fine for testing, but not allowed for paid events.";
+  info.textContent = text;
+  info.classList.toggle("bad", mapStatus.kind !== "google" && !!(mapStatus.problem || !key));
+}
+function applyMapKey(){
+  const key = $("mapKey").value.trim();
+  GAME.map = { ...(GAME.map || {}), googleKey: key };
+  saveDraft();
+  mapStatus.problem = null;
+  renderMap();
+  setMapSource();
+}
+$("mapKeyApply").onclick = applyMapKey;
+$("mapKey").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); applyMapKey(); } });
+hooks.mapSource.push(() => { renderMap(); renderExport(); });
+
+/* ════════════════════════════════════════════════════════════════════
    IMAGE LINKS — previews while typing, and a check that every link in the
    game actually loads, since a typo would only show up on a team's phone.
    ════════════════════════════════════════════════════════════════════ */
@@ -950,5 +982,6 @@ function clearProgress(){
    ════════════════════════════════════════════════════════════════════ */
 // The game drew its screens before the draft was applied above; redraw them with the admin's content.
 renderSheet();
+setMapSource(); renderMap();
 renderPoi(); renderMystery(); renderExport(); setSrcButtons(); renderLog(); render(); checkReveal();
 if (wideScreen.matches) toggleDrawer(true);      // on a computer, open with the tools showing

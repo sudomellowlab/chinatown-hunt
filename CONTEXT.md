@@ -95,18 +95,27 @@ first.
   and the content scrambled.
 - Challenges: multiple choice, typed answers, numbers, with free hints; the admin editor to
   add, edit, reorder and delete them. Answers are recorded but right/wrong is never shown.
+- Google Maps: paste a Google Maps Platform key (Map Tiles API) under **Map** in the admin
+  panel and the map becomes Google's, with a Map/Satellite switch. Without a key, or if
+  Google refuses it, the map falls back to OpenStreetMap, and the panel says why.
 - Images: challenge questions, clues and suspects can each show a picture, linked by an
   `https://` address on your own server. **Check image links** in the admin panel tests them
   all. Phones download every picture when the team taps Begin.
 - Clues & suspects: you set the game length, how many minutes before the end they appear,
   and both lists. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 124 unit tests and 72 browser tests, run by CI on every push.
+- 124 unit tests and 83 browser tests, run by CI on every push.
 
 **Not built yet**
 1. **Real content.** (A "starting location" step was planned and then dropped: every
    location is open from the start.) All eight locations still hold placeholder coordinates and
    placeholder challenges.
+
+**Before going live on your server**
+- Add your website's address (e.g. `https://your-domain/*`) to the Google API key's
+  **Website restrictions** in Google Cloud. Only `http://localhost:8765/*` is there now,
+  so Google will refuse the key on the server until you do.
+- Export the game file with the key pasted in, upload it, and open it on a phone.
 
 **Untested in the real world**
 - The exported file on a real phone over HTTPS (worth one try before an event).
