@@ -96,7 +96,8 @@ first.
 - Challenges: multiple choice, typed answers, numbers, with free hints; the admin editor to
   add, edit, reorder and delete them. Answers are recorded but right/wrong is never shown.
 - Google Maps: paste a Google Maps Platform key (Map Tiles API) under **Map** in the admin
-  panel and the map becomes Google's, with a Map/Satellite switch. Without a key, or if
+  panel and the map becomes Google's, with a Map/Satellite switch. Confirmed working with the real
+  key on localhost on 16 September 2026. Without a key, or if
   Google refuses it, the map falls back to OpenStreetMap, and the panel says why.
 - Images: challenge questions, clues and suspects can each show a picture, linked by an
   `https://` address on your own server. **Check image links** in the admin panel tests them
