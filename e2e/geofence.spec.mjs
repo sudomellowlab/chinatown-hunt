@@ -172,3 +172,35 @@ test("a participant's countdown carries on across a reload instead of restarting
   await page.reload();
   await expect(page.locator("#clock")).toHaveText(/^1:(49:[0-5]\d|50:00)$/);
 });
+
+test("pins are teardrops whose tip marks the spot, inside a clearly shaded area that changes as the game goes on", async ({ app, page }) => {
+  await app.open({ file: "play" });
+  const loc = GAME.locations[0];
+  const ringOf = id => page.locator(".leaflet-overlay-pane path").nth(GAME.locations.findIndex(l => l.id === id));
+  const style = async id => ringOf(id).evaluate(p => ({ fill: p.getAttribute("fill"), op: +p.getAttribute("fill-opacity") }));
+
+  // Every location starts shaded dark, strongly enough to see on a busy map.
+  for (const l of GAME.locations) {
+    const s = await style(l.id);
+    expect(s.fill).toBe("#16202B");
+    expect(s.op).toBeGreaterThanOrEqual(0.35);
+  }
+  await expect(page.locator(".pinnum")).toHaveCount(0);
+
+  // The tip of the pin is the centre of its circle.
+  const pin = await page.locator(`.pin[data-id="${loc.id}"]`).boundingBox();
+  const ring = await ringOf(loc.id).boundingBox();
+  expect(Math.abs(pin.x + pin.width / 2 - (ring.x + ring.width / 2))).toBeLessThan(1.5);
+  expect(Math.abs(pin.y + 32 - (ring.y + ring.height / 2))).toBeLessThan(1.5);
+
+  // Gold while open, green once finished.
+  await app.begin(far(GAME.locations));
+  for (let i = 0; i < 3; i++) await app.fix(offset(loc, 1, i * 120));
+  expect((await style(loc.id)).fill).toBe("#8A6D2F");
+  await expect(page.locator(`.pin[data-id="${loc.id}"]`)).toHaveClass(/\bactive\b/);
+  await page.locator("#nextBtn").click();
+  for (let i = 1; i < loc.tasks.length; i++) await page.locator("#nextBtn").click();
+  await page.locator("#finishBtn").click();
+  expect((await style(loc.id)).fill).toBe("#2E6B5E");
+  await expect(page.locator(`.pin[data-id="${loc.id}"]`)).toHaveClass(/\breached\b/);
+});

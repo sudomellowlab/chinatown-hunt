@@ -101,7 +101,7 @@ hooks.fix.push((fix, out, src) => {
 hooks.render.push(ranges => { setSrcButtons(); if (drawerOpen) renderState(ranges); });
 hooks.beforeSource.push(next => { if (next !== "sim") stopSim(); if (next !== "replay") pauseReplay(); });
 hooks.ringStyle = id => poiMode && id === capSel.value
-  ? { color:"#8A6D2F", fillColor:"#8A6D2F", fillOpacity:.15, weight:2, dashArray:null } : null;
+  ? { color:"#8A6D2F", weight:3, opacity:1, fillColor:"#8A6D2F", fillOpacity:.5, dashArray:"6 4" } : null;
 hooks.status = () =>
   feed.frozen ? { dot:"dead", text:"feed frozen" } :
   feed.source === "sim" ? { dot:"sim", text:"simulated" } :

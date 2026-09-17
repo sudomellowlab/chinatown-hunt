@@ -97,7 +97,6 @@ body.dev #strip{top:30px;padding-top:7px}
 #sheet button{width:100%;padding:15px;min-height:52px;border:none;font-size:17px;margin-top:10px}
 #sheet button.primary{background:var(--ink);color:var(--sheet)}
 #sheet button.secondary{background:transparent;color:var(--ink);border:1px solid var(--ink)}
-.pin.active{background:var(--brass);border-color:var(--brass);color:#FFF8E6}
 
 /* ---------- dev drawer ---------- */
 #devbtn{
@@ -139,12 +138,17 @@ textarea{font-family:var(--mono);font-size:11px;height:160px;line-height:1.45}
 #state{font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--slate)}
 
 /* ---------- map marks ---------- */
-.pin{
-  width:26px;height:26px;border-radius:50%;border:2px solid var(--ink);
-  background:var(--sheet);display:flex;align-items:center;justify-content:center;
-  font-family:var(--mono);font-size:12px;font-weight:600;
-}
-.pin.reached{background:var(--jade);border-color:var(--jade);color:var(--sheet)}
+.pin{position:relative;width:30px;height:34px;cursor:pointer}
+/* the teardrop: a square with three rounded corners, turned so the sharp one points down to the spot */
+.pin::before{content:"";position:absolute;left:2px;top:1px;width:26px;height:26px;box-sizing:border-box;
+  background:#C0392B;border:2px solid #FFF;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+  box-shadow:0 1px 3px rgba(0,0,0,.45)}
+.pin::after{content:"";position:absolute;left:11px;top:10px;width:8px;height:8px;border-radius:50%;background:#FFF}
+.pin.active::before{background:var(--brass)}
+.pin.reached::before{background:var(--jade)}
+.pin .pinnum{position:absolute;left:0;top:6px;width:30px;text-align:center;z-index:1;
+  font-family:var(--mono);font-size:11px;font-weight:700;color:#FFF;line-height:16px}
+.pin:has(.pinnum)::after{display:none}
 .you{width:16px;height:16px;border-radius:50%;background:var(--ink);border:2.5px solid var(--sheet);
   box-shadow:0 0 0 1px var(--ink)}
 .you.sim{background:var(--brass)}

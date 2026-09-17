@@ -13,7 +13,9 @@ test.beforeEach(async ({ app }) => {
 });
 
 const optionTexts = page => page.locator("#capTarget option").allTextContents();
-const pinNumbers = page => page.locator(".pin").evaluateAll(ps => ps.map(p => `${p.textContent}:${p.dataset.id}`));
+// Pin order as "n:id". The admin file shows n on the pin; participants' pins carry it but show no number.
+const pinNumbers = page => page.locator(".pin").evaluateAll(ps => ps.map(p => `${p.dataset.n}:${p.dataset.id}`));
+const shownNumbers = page => page.locator(".pin").evaluateAll(ps => ps.map(p => p.textContent));
 async function exportGame(page) {
   const [dl] = await Promise.all([page.waitForEvent("download"), page.locator("#exportGame").click()]);
   return readFileSync(await dl.path(), "utf8");
@@ -72,6 +74,7 @@ test("rename, add, reorder and delete locations; the exported game follows exact
   const expected = ["1. Telok Ayer Park", "2. Far East Square", ...GAME.locations.slice(2).map((l, i) => `${i + 3}. ${l.name}`)];
   expect(await optionTexts(page)).toEqual(expected);
   expect(await pinNumbers(page)).toEqual(expect.arrayContaining([`1:${first.id}`, `2:${added}`, `3:${third.id}`]));
+  expect(await shownNumbers(page), "the admin file numbers its pins").toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
   expect(await page.locator("#jump option").allTextContents()).toEqual(["Jump to a location…", ...expected]);
 
   // Survives a reload.
@@ -85,6 +88,7 @@ test("rename, add, reorder and delete locations; the exported game follows exact
 
   await onPhone(browser, html, 8, async (player, phonePage) => {
     expect(await pinNumbers(phonePage)).toEqual(expect.arrayContaining([`1:${first.id}`, `2:${added}`]));
+    expect(await shownNumbers(phonePage), "no numbers on participants' pins").toEqual(Array(8).fill(""));
     await expect(phonePage.locator(`.pin[data-id="${second.id}"]`)).toHaveCount(0);
     await expect(phonePage.locator("#total")).toHaveText("8");
     await player.begin(far(GAME.locations));

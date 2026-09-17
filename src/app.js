@@ -213,18 +213,24 @@ setMapSource();
 // One numbered pin and one geofence ring per location, in list order. The participant file
 // draws them once; the admin file redraws them whenever locations are added, removed or reordered.
 const pins = {}, rings = {};
+// Geofence looks, like LoQuiz's: a strong dark shade around each pin, gold while open, green once done.
+const RING = {
+  todo:   { color:"#16202B", weight:1.5, opacity:.8, fillColor:"#16202B", fillOpacity:.42, dashArray:null },
+  active: { color:"#8A6D2F", weight:2.5, opacity:1, fillColor:"#8A6D2F", fillOpacity:.45, dashArray:null },
+  done:   { color:"#2E6B5E", weight:1.5, opacity:.9, fillColor:"#2E6B5E", fillOpacity:.38, dashArray:null },
+};
 function rebuildLocations(){
   for (const id of Object.keys(pins)) { map.removeLayer(pins[id]); map.removeLayer(rings[id]); delete pins[id]; delete rings[id]; }
   GAME.locations.forEach((l, i) => {
-    rings[l.id] = L.circle([l.lat, l.lng], {
-      radius: Engine.radiusOf(l, state.cfg),
-      color:"#16202B", weight:1, opacity:.55, fillColor:"#16202B", fillOpacity:.05, dashArray:"3 5"
-    }).addTo(map);
+    rings[l.id] = L.circle([l.lat, l.lng], { radius: Engine.radiusOf(l, state.cfg), ...RING.todo }).addTo(map);
+    // A teardrop pin whose tip marks the spot. Only the admin file numbers them (to match its location
+    // list); participants see no numbers, since the locations can be done in any order.
     const pin = document.createElement("div");
-    pin.className = "pin"; pin.dataset.id = l.id; pin.textContent = i + 1;
+    pin.className = "pin"; pin.dataset.id = l.id; pin.dataset.n = i + 1;
+    if (BUILD === "admin") pin.append(Object.assign(document.createElement("span"), { className:"pinnum", textContent: i + 1 }));
     pins[l.id] = L.marker([l.lat, l.lng], {
-      icon: L.divIcon({ className:"", html:pin, iconSize:[26,26], iconAnchor:[13,13] })
-    }).addTo(map).bindTooltip(document.createTextNode(l.name?.trim() || "(unnamed)"), { direction:"top", offset:[0,-14] });
+      icon: L.divIcon({ className:"", html:pin, iconSize:[30,34], iconAnchor:[15,32] })   // anchor = the tip
+    }).addTo(map).bindTooltip(document.createTextNode(l.name?.trim() || "(unnamed)"), { direction:"top", offset:[0,-32] });
     hooks.pinCreated.forEach(fn => fn(l, pins[l.id]));
   });
   state.progress = Play.reconcile(state.progress, GAME);
@@ -301,9 +307,7 @@ function styleRing(id){
   const ring = rings[id]; if (!ring) return;
   const custom = hooks.ringStyle?.(id);
   if (custom) ring.setStyle(custom);
-  else if (state.progress.completed.includes(id)) ring.setStyle({ color:"#2E6B5E", fillColor:"#2E6B5E", fillOpacity:.1, weight:1, dashArray:null });
-  else if (state.progress.active === id) ring.setStyle({ color:"#8A6D2F", fillColor:"#8A6D2F", fillOpacity:.12, weight:2, dashArray:null });
-  else ring.setStyle({ color:"#16202B", fillColor:"#16202B", fillOpacity:.05, weight:1, dashArray:"3 5" });
+  else ring.setStyle(state.progress.completed.includes(id) ? RING.done : state.progress.active === id ? RING.active : RING.todo);
 }
 
 /* ════════════════════════════════════════════════════════════════════
