@@ -10,6 +10,28 @@
 <body>
 
 <!-- admin:start -->
+<script>
+  // "Preview as participant" opens this same file with ?preview: switch before the game loads.
+  if (new URLSearchParams(location.search).has("preview")) document.documentElement.dataset.build = "preview";
+</script>
+<style>
+/* Preview as participant. Admin file only, so participant files carry none of it. */
+body.preview #drawer,body.preview #devbtn,body.preview #poibar{display:none!important}
+#previewbar{
+  position:fixed;top:0;left:0;right:0;z-index:980;display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;
+  padding:calc(env(safe-area-inset-top) + 6px) 10px 6px;
+  background:repeating-linear-gradient(135deg,var(--brass) 0 11px,#7a6029 11px 22px);color:#FFF8E6;font-size:12px;
+  border-bottom:1px solid var(--ink);
+}
+#previewbar strong{letter-spacing:.06em;text-transform:uppercase}
+#previewbar #pvHint{flex:1 1 100%}
+#previewbar select,#previewbar button{font-size:12px;min-height:30px;padding:2px 8px;border:1px solid var(--ink);background:var(--sheet);color:var(--ink);width:auto}
+#previewbar select{flex:1;min-width:0}
+body.preview #strip{top:62px;padding-top:7px}
+body.preview .leaflet-top.leaflet-right{margin-top:100px}
+body.preview #start{padding-top:62px}
+body.preview #reveal .revealcard{padding-top:62px}
+</style>
 <div id="devbanner">admin file — for setting up and testing the game · never give this file to participants</div>
 <!-- admin:end -->
 
@@ -82,6 +104,7 @@
     <h4>Export game file</h4>
     <div class="note" id="exportInfo"></div>
     <div class="row"><button class="btn primary" id="exportGame">Export game file</button></div>
+    <div class="row"><button class="btn" id="previewGame">Preview as participant</button></div>
     <div class="row"><button class="btn" id="checkImages">Check image links</button></div>
     <div class="note" id="imageInfo"></div>
     <div class="note" id="draftInfo"></div>

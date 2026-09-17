@@ -8,7 +8,8 @@ import { GAME } from "./game.js";
    the admin module (admin.js) is left out of it entirely, and plugs in
    through `hooks` only in the admin file.
    ════════════════════════════════════════════════════════════════════ */
-const BUILD = document.documentElement.dataset.build === "play" ? "play" : "admin";
+// play: the participant file. admin: the admin file. preview: the admin file showing the participant view.
+const BUILD = ["play", "preview"].includes(document.documentElement.dataset.build) ? document.documentElement.dataset.build : "admin";
 
 /* ════════════════════════════════════════════════════════════════════
    STORAGE — falls back to memory where localStorage is unavailable
@@ -18,8 +19,8 @@ const store = (() => {
   try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return localStorage; }
   catch(e){ const m={}; return { getItem:k=>(k in m?m[k]:null), setItem:(k,v)=>{m[k]=String(v)}, removeItem:k=>{delete m[k]} }; }
 })();
-// Progress is keyed by the game's permanent id, and kept apart between the admin and participant files.
-const KEY = `chinatown-hunt${BUILD === "admin" ? "-admin" : ""}:${GAME.id}`;
+// Progress is keyed by the game's permanent id, and kept apart between the admin, preview and participant views.
+const KEY = `chinatown-hunt${BUILD === "play" ? "" : "-" + BUILD}:${GAME.id}`;
 
 /* ════════════════════════════════════════════════════════════════════
    STATE
@@ -559,7 +560,7 @@ renderSheet();          // a reload mid-location goes straight back to it
 renderReveal();
 showStart();
 
-export { BUILD, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing, styleLocation,
+export { BUILD, KEY, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing, styleLocation,
   mapStatus, setMapSource, rebuildLocations,
   $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, finishActive, locationById,
-  startReal, stopReal, hideStart };
+  msLeft, startReal, stopReal, showStart, hideStart };

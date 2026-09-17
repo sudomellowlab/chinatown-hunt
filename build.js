@@ -38,7 +38,7 @@ function page(admin, modules) {
 
 // Participant page: the game only, with its content left as a slot for a sealed pack.
 const template = page(false, [inline("engine.js"), inline("play.js"), inline("pack.js"), 'const GAME = Pack.open("__GAME_PACK__");', inline("app.js")]);
-for (const admin of ['id="drawer"', 'id="devbtn"', "setPoi", "Walk.record", "__PARTICIPANT_TEMPLATE__"])
+for (const admin of ['id="drawer"', 'id="devbtn"', "setPoi", "Walk.record", "__PARTICIPANT_TEMPLATE__", "startPreview", "previewbar", "pvGo"])
   if (template.includes(admin)) throw new Error(`build: admin code leaked into the participant file (${admin})`);
 
 // Admin page: everything, plus the participant page embedded so Export can produce it.

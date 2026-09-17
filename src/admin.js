@@ -4,9 +4,9 @@ import { Poi } from "./poi.js";
 import { Play } from "./play.js";
 import { Pack } from "./pack.js";
 import { GAME } from "./game.js";
-import { store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing, styleLocation, mapStatus, setMapSource, rebuildLocations,
+import { BUILD, KEY, store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing, styleLocation, mapStatus, setMapSource, rebuildLocations,
   $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, finishActive, locationById,
-  startReal, stopReal, hideStart } from "./app.js";
+  msLeft, startReal, stopReal, showStart, hideStart } from "./app.js";
 
 /* ════════════════════════════════════════════════════════════════════
    ADMIN & DEV TOOLS — only in the admin file (chinatown-hunt-admin.html).
@@ -16,12 +16,14 @@ import { store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing
    ════════════════════════════════════════════════════════════════════ */
 const ADMIN_KEY = "chinatown-hunt-m1";          // where earlier versions kept edits and recordings; kept so they survive
 
-ui.startScreen = false; hideStart();
-document.body.classList.add("dev");
-document.title = `${GAME.title} · Admin`;
+// Preview: the same file opened with ?preview shows the game as participants see it (see PREVIEW below).
+const PREVIEW = BUILD === "preview";
+if (!PREVIEW) { ui.startScreen = false; hideStart(); }
+document.body.classList.add(PREVIEW ? "preview" : "dev");
+document.title = `${GAME.title} · ${PREVIEW ? "Preview" : "Admin"}`;
 // Testing in the admin file runs the clock from each load, so an old test session never
 // opens straight onto the clues screen. Reset progress restarts it too.
-state.startedAt = Date.now(); save(); renderClock();
+if (!PREVIEW) { state.startedAt = Date.now(); save(); renderClock(); }
 
 /* ════════════════════════════════════════════════════════════════════
    THE DRAFT — the game as the admin is building it: locations, radii,
@@ -93,7 +95,7 @@ const fixLog = [];
 
 // Replayed fixes aren't re-recorded, so exporting after a replay doesn't duplicate the walk.
 hooks.fix.push((fix, out, src) => {
-  if (src !== "replay") { Walk.record(walk.log, fix, src); walk.dirty = true; }
+  if (src !== "replay" && !PREVIEW) { Walk.record(walk.log, fix, src); walk.dirty = true; }
   logFix(fix, out, src);
 });
 hooks.render.push(ranges => { setSrcButtons(); if (drawerOpen) renderState(ranges); });
@@ -987,11 +989,83 @@ function clearProgress(){
 }
 
 /* ════════════════════════════════════════════════════════════════════
+   PREVIEW AS PARTICIPANT — opens this file with ?preview in a phone-sized
+   window: the game exactly as participants see it, built from the draft,
+   with its own progress. Location is faked like LoQuiz's fake location:
+   the preview replaces the browser's geolocation, so positions still go
+   through the game's real GPS path (watchPosition → onFix → engine).
+   ════════════════════════════════════════════════════════════════════ */
+$("previewGame").onclick = () => {
+  saveDraft();
+  const w = window.open(`${location.pathname}?preview`, "chinatown-preview", "width=430,height=880");
+  if (!w) alert("Your browser blocked the preview window. Allow pop-ups for this page and try again.");
+  else w.focus();
+};
+
+function startPreview(){
+  // Fake geolocation: every watcher gets the chosen position now and every second after, at ±5 m.
+  const fake = { at: null, watchers: new Map(), next: 1 };
+  const position = () => ({ coords: { latitude: fake.at.lat, longitude: fake.at.lng, accuracy: 5,
+    altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() });
+  const emit = () => { if (fake.at) for (const ok of fake.watchers.values()) ok(position()); };
+  const geo = {
+    watchPosition(ok){ const id = fake.next++; fake.watchers.set(id, ok); setTimeout(emit, 0); return id; },
+    clearWatch(id){ fake.watchers.delete(id); },
+    getCurrentPosition(ok){ if (fake.at) setTimeout(() => ok(position()), 0); },
+  };
+  try { Object.defineProperty(navigator, "geolocation", { value: geo, configurable: true }); } catch(e){}
+  setInterval(emit, 1000);
+
+  const marker = L.circleMarker([0, 0], { radius: 9, color: "#8A6D2F", weight: 3, fillColor: "#FFF8E6", fillOpacity: 1 });
+  function place(lat, lng){
+    fake.at = { lat, lng };
+    marker.setLatLng([lat, lng]).addTo(map);
+    emit();
+    renderBar();
+  }
+  map.on("click", e => place(e.latlng.lat, e.latlng.lng));
+  // Pins catch their own clicks; clicking one puts you on it.
+  for (const pin of Object.values(pins)) pin.on("click", () => { const ll = pin.getLatLng(); place(ll.lat, ll.lng); });
+
+  const bar = $("devbanner");
+  bar.id = "previewbar";
+  bar.innerHTML = `<strong>Preview</strong>
+    <select id="pvGo" aria-label="Go to a location"></select>
+    <button type="button" id="pvClues">Skip to clues</button>
+    <button type="button" id="pvRestart">Restart</button>
+    <span id="pvHint"></span>`;
+  const go = $("pvGo");
+  go.replaceChildren(new Option("Go to…", ""), ...GAME.locations.map((l, i) => new Option(`${i + 1}. ${l.name}`, l.id)));
+  go.onchange = () => {
+    const l = GAME.locations.find(x => x.id === go.value); go.value = "";
+    if (l) { place(l.lat, l.lng); map.setView([l.lat, l.lng], Math.max(map.getZoom(), 18)); }
+  };
+  $("pvClues").onclick = () => {
+    if (!state.startedAt) { alert("Tap Begin first: the clock starts then."); return; }
+    state.startedAt = Date.now() - (state.clockMinutes - GAME.revealMinutes) * 60000;
+    save(); renderClock(); checkReveal();
+  };
+  $("pvRestart").onclick = () => {
+    if (!confirm("Restart the preview from the start screen?")) return;
+    store.removeItem(KEY);
+    location.reload();
+  };
+  function renderBar(){
+    $("pvHint").textContent = !state.startedAt ? "Tap Begin, then click the map to set your location."
+      : fake.at ? "You're where you clicked. Click elsewhere to move." : "Click the map to set your location.";
+  }
+  hooks.render.push(renderBar);
+  $("startBtn").addEventListener("click", () => setTimeout(renderBar, 0));
+  renderBar();
+}
+
+/* ════════════════════════════════════════════════════════════════════
    BOOT
    ════════════════════════════════════════════════════════════════════ */
 // The game drew its screens before the draft was applied above; redraw them with the admin's content.
 renderSheet();
 setMapSource(); renderMap();
-document.title = `${GAME.title} · Admin`;
+document.title = `${GAME.title} · ${PREVIEW ? "Preview" : "Admin"}`;
 renderGameText(); renderPoi(); renderMystery(); renderExport(); setSrcButtons(); renderLog(); render(); checkReveal();
-if (wideScreen.matches) toggleDrawer(true);      // on a computer, open with the tools showing
+if (PREVIEW) startPreview();
+else if (wideScreen.matches) toggleDrawer(true);      // on a computer, open with the tools showing

@@ -52,6 +52,10 @@ Node 22+ only. `npm ci` is needed just for the browser tests.
 
 ## 3. Showing it without walking around Singapore
 
+- **Preview as participant** (Export section): opens your game exactly as teams see it, in a
+  phone-sized window. Tap Begin, then click the map (or a pin, or use **Go to**) to fake your
+  location; the location opens after about 3 seconds, as on a real phone. **Skip to clues**
+  jumps the clock; **Restart** starts over. Allow pop-ups for the page if it's blocked.
 - **Clues screen:** in the admin panel, **Show the clues screen now** previews it; dragging
   the **Clock** slider (State section) below the reveal time triggers it for real.
 - **Admin file:** open it, then in the panel use **Jump to a location…** under Position
@@ -109,7 +113,7 @@ first.
 - Clues & suspects: you set the game length, how many minutes before the end they appear,
   and both lists. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 122 unit tests and 89 browser tests, run by CI on every push.
+- 122 unit tests and 95 browser tests, run by CI on every push.
 
 **Not built yet**
 1. **Real content.** The default game is placeholders: eight made-up locations, challenges,
