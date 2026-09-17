@@ -1,4 +1,5 @@
 :root{
+  color-scheme:only light;       /* never let a browser's auto dark mode recolour the game */
   --linen:#DCE0D8;
   --linen-deep:#C7CDC3;
   --ink:#16202B;
@@ -20,6 +21,9 @@ body{
   overscroll-behavior:none;
 }
 button{font-family:inherit;color:inherit;cursor:pointer}
+/* Form controls get explicit colours rather than the browser's defaults. */
+input,select,textarea,button{color:var(--ink)}
+input,select,textarea{background-color:var(--linen)}
 
 /* ---------- map ---------- */
 #map{position:fixed;inset:0;background:var(--linen-deep)}

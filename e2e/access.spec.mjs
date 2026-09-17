@@ -78,3 +78,16 @@ test("a participant who refuses location is told how to fix it and can try again
   await expect(page.locator("#start")).toBeVisible();
   await expect(page.locator("#startBtn")).toHaveText("Continue");
 });
+
+test("the game keeps its own light colours, even when the phone is set to dark mode", async ({ app, page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await app.open({ file: "play" });
+  await expect(page.locator('meta[name="color-scheme"]')).toHaveAttribute("content", "only light");
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toMatch(/^(only light|light only)$/);
+  const colours = await page.evaluate(() => {
+    const bg = el => getComputedStyle(el).backgroundColor, fg = el => getComputedStyle(el).color;
+    return { start: bg(document.querySelector(".startcard")), title: fg(document.getElementById("startTitle")),
+             button: bg(document.getElementById("startBtn")), body: bg(document.body) };
+  });
+  expect(colours).toEqual({ start: "rgb(233, 236, 229)", title: "rgb(22, 32, 43)", button: "rgb(22, 32, 43)", body: "rgb(220, 224, 216)" });
+});
