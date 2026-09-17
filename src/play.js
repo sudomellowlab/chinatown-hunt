@@ -144,6 +144,35 @@ const Play = {
     return [...new Set(urls)];
   },
 
+  /* ── links in text ── */
+
+  // Organiser text may contain links written as [words](https://address).
+  LINK: /\[([^\[\]\n]+)\]\(([^()\s]*)\)/g,
+  linkProblem(href){
+    let u;
+    try { u = new URL(href); } catch (e) { return "isn't a web address"; }
+    return ["https:", "http:"].includes(u.protocol) ? null : "must start with https://";
+  },
+  /* Split text into pieces: { text } or { text, href }. A link with a bad address stays plain text. */
+  parseLinks(text){
+    const s = String(text ?? ""), out = [];
+    let last = 0;
+    for (const m of s.matchAll(Play.LINK)) {
+      if (Play.linkProblem(m[2])) continue;
+      if (m.index > last) out.push({ text: s.slice(last, m.index) });
+      out.push({ text: m[1], href: m[2] });
+      last = m.index + m[0].length;
+    }
+    if (last < s.length) out.push({ text: s.slice(last) });
+    return out;
+  },
+  // Problems with links in a piece of text, in plain words.
+  linkProblems(text){
+    return [...String(text ?? "").matchAll(Play.LINK)]
+      .map(m => [m, Play.linkProblem(m[2])]).filter(([, p]) => p)
+      .map(([m, p]) => `the link on "${m[1]}" ${p}`);
+  },
+
   /* ── validation for the admin editor ── */
 
   validateTask(task){
@@ -151,6 +180,7 @@ const Play = {
     if (!String(task.prompt ?? "").trim() && !String(task.image ?? "").trim()) problems.push("add some text or a picture");
     const img = Play.imageProblem(task.image);
     if (img) problems.push(img);
+    problems.push(...Play.linkProblems(task.prompt));
     return problems;
   },
 
@@ -158,6 +188,8 @@ const Play = {
   validateGame(game){
     const lines = [], seen = new Set(), locIds = new Set();
     if (!String(game.title ?? "").trim()) lines.push("Game: the title is empty");
+    for (const p of Play.linkProblems(game.intro)) lines.push(`Game: start screen text: ${p}`);
+    for (const p of Play.linkProblems(game.revealIntro)) lines.push(`Clues: introduction: ${p}`);
     if (!game.locations.length) lines.push("Locations: add at least one location");
     game.locations.forEach((l, i) => {
       const where = `Location ${i + 1}${String(l.name ?? "").trim() ? ` (${l.name})` : ""}`;
@@ -166,6 +198,7 @@ const Play = {
       locIds.add(l.id);
       if (!(Number.isFinite(l.lat) && Math.abs(l.lat) <= 90 && Number.isFinite(l.lng) && Math.abs(l.lng) <= 180)) lines.push(`${where}: its position is invalid`);
       if (l.radius != null && !(Number.isFinite(l.radius) && l.radius > 0)) lines.push(`${where}: the radius must be more than 0`);
+      for (const p of Play.linkProblems(l.arrivalText)) lines.push(`${where}: arrival text: ${p}`);
     });
     for (const l of game.locations) {
       (l.tasks || []).forEach((t, i) => {
@@ -186,12 +219,14 @@ const Play = {
       if (!String(c.text ?? "").trim()) lines.push(`Clues: clue ${i + 1} is empty`);
       const img = Play.imageProblem(c.image);
       if (img) lines.push(`Clues: clue ${i + 1}: ${img}`);
+      for (const p of Play.linkProblems(c.text)) lines.push(`Clues: clue ${i + 1}: ${p}`);
     });
     if (!suspects.length) lines.push("Suspects: add at least one suspect");
     suspects.forEach((s, i) => {
       if (!String(s.name ?? "").trim()) lines.push(`Suspects: suspect ${i + 1} has no name`);
       const img = Play.imageProblem(s.image);
       if (img) lines.push(`Suspects: suspect ${i + 1}: ${img}`);
+      for (const p of Play.linkProblems(s.blurb)) lines.push(`Suspects: suspect ${i + 1}: ${p}`);
     });
     return lines;
   },

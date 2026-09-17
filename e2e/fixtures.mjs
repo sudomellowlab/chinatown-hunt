@@ -111,8 +111,12 @@ export async function createApp({ page, context }) {
 
     // No alert may appear unless a test expects exactly that message.
     // Expected confirms can be accepted; everything else is dismissed.
-    const dialogs = [], expectedDialogs = [], accept = new Set();
-    page.on("dialog", d => { dialogs.push(d.message()); (accept.has(d.message()) ? d.accept() : d.dismiss()).catch(() => {}); });
+    // Prompts can be answered: expectDialog(message, { accept: true, value }).
+    const dialogs = [], expectedDialogs = [], accept = new Map();
+    page.on("dialog", d => {
+      dialogs.push(d.message());
+      (accept.has(d.message()) ? d.accept(accept.get(d.message()) ?? undefined) : d.dismiss()).catch(() => {});
+    });
 
     let fixes = 0, nudge = 0;
     const app = {
@@ -141,7 +145,7 @@ export async function createApp({ page, context }) {
       toolsOpen: () => page.locator("#drawer").evaluate(el => el.classList.contains("up")),
       async openTools() { if (!(await app.toolsOpen())) await page.locator("#devbtn").click(); },
       async closeTools() { if (await app.toolsOpen()) await page.locator("#drawerclose").click(); },
-      expectDialog(message, { accept: yes = false } = {}) { expectedDialogs.push(message); if (yes) accept.add(message); },
+      expectDialog(message, { accept: yes = false, value } = {}) { expectedDialogs.push(message); if (yes) accept.set(message, value); },
       geoErrors: () => page.evaluate(() => window.__geoErrors),
 
       // Location data as the app sees it, via the coordinate capture tool's export.

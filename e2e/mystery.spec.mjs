@@ -109,6 +109,8 @@ test("export is blocked until timing, clues and suspects are complete", async ({
 test("Show the clues screen now previews it without touching progress", async ({ page }) => {
   await page.locator("#previewReveal").click();
   await expect(page.locator("#reveal")).toBeVisible();
+  await page.waitForTimeout(2500);                                   // the screen's once-a-second update mustn't close it
+  await expect(page.locator("#reveal")).toBeVisible();
   await expect(page.locator("#clueList li")).toHaveText(GAME.clues.map(c => c.text));
   await expect(page.locator("#drawer"), "the panel stays beside it on a computer").toBeInViewport();
   const progress = await page.evaluate(() => JSON.parse(localStorage.getItem("chinatown-hunt-admin:chinatown-historical-hunt")).progress);

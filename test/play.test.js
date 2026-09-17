@@ -244,6 +244,39 @@ describe("validation", () => {
     assert.match(Play.newLocationId(game), /^l-[0-9a-z]{8}$/);
   });
 
+  test("links are written [words](address) and split out of the text", () => {
+    assert.deepEqual(Play.parseLinks("See the [temple's history](https://thk.sg/history) first."), [
+      { text: "See the " }, { text: "temple's history", href: "https://thk.sg/history" }, { text: " first." },
+    ]);
+    assert.deepEqual(Play.parseLinks("[A](http://a.sg)[B](https://b.sg/x?y=1&z=2)\nend"), [
+      { text: "A", href: "http://a.sg" }, { text: "B", href: "https://b.sg/x?y=1&z=2" }, { text: "\nend" },
+    ]);
+    assert.deepEqual(Play.parseLinks("No links [here] (https://x.sg) or [there]()."), [{ text: "No links [here] (https://x.sg) or [there]()." }]);
+    assert.deepEqual(Play.parseLinks(""), []);
+    assert.deepEqual(Play.parseLinks(undefined), []);
+  });
+
+  test("a link with a bad or unsafe address stays plain text and is reported", () => {
+    const text = "Try [this](javascript:alert(1)) and [that](www.x.sg) and [ok](https://ok.sg).";
+    assert.deepEqual(Play.parseLinks(text).filter(p => p.href).map(p => p.href), ["https://ok.sg"]);
+    assert.deepEqual(Play.linkProblems(text), [
+      'the link on "that" isn\'t a web address',
+    ]);
+    assert.deepEqual(Play.linkProblems("[x](mailto:a@b.sg) [y]()"), [
+      'the link on "x" must start with https://', 'the link on "y" isn\'t a web address',
+    ]);
+    assert.deepEqual(Play.validateTask({ prompt: "Read [this](ftp://x.sg)" }), ['the link on "this" must start with https://']);
+    assert.deepEqual(Play.validateGame({ ...game, intro: "[a](b)", revealIntro: "[c](d)",
+      locations: [{ ...loc, arrivalText: "[e](f)" }, other, empty],
+      clues: [{ id: "c1", text: "[g](h)" }], suspects: [{ id: "s1", name: "S", blurb: "[i](j)" }] }), [
+      'Game: start screen text: the link on "a" isn\'t a web address',
+      'Clues: introduction: the link on "c" isn\'t a web address',
+      'Location 1 (Thian Hock Keng): arrival text: the link on "e" isn\'t a web address',
+      'Clues: clue 1: the link on "g" isn\'t a web address',
+      'Suspects: suspect 1: the link on "i" isn\'t a web address',
+    ]);
+  });
+
   test("new ids never repeat one already taken", () => {
     const seq = [0, 0, 0.5];
     const id = Play.newTaskId({ locations: [{ tasks: [{ id: "t-00000000" }] }] }, () => seq.shift());

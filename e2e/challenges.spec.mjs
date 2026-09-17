@@ -210,3 +210,47 @@ test("an open location fills the screen; the buttons stay in reach under long te
   await expect(page.locator("#map")).toBeInViewport();
   await expect(page.locator("#hud")).toBeInViewport();
 });
+
+test("links in the organiser's text open in a new tab and leave the game where it was", async ({ app, page, context }) => {
+  await context.route("https://history.test/**", r => r.fulfill({ contentType: "text/html", body: "<h1>History</h1>" }));
+  const game = structuredClone(GAME);
+  const thk = game.locations.find(l => l.id === THK.id);
+  thk.arrivalText = "Read [the temple's story](https://history.test/thk) before you start.";
+  thk.tasks[0] = { id: C1.id, prompt: "Look at [this plaque](https://history.test/plaque) and [this](javascript:alert(1)).\nThen answer in LoQuiz." };
+  game.clues[0].text = "See [the ledger](https://history.test/ledger).";
+  game.suspects[0].blurb = "Profile: [Tan](https://history.test/tan).";
+  await app.open({ file: "play", html: playHtml(game) });
+  await arriveAt(app);
+
+  const story = page.locator("#sheettext a");
+  await expect(story).toHaveText("the temple's story");
+  await expect(story).toHaveAttribute("href", "https://history.test/thk");
+  await expect(story).toHaveAttribute("target", "_blank");
+  await expect(story).toHaveAttribute("rel", "noopener noreferrer");
+  expect(await page.locator("#sheettext").evaluate(el => el.innerText)).toBe("Read the temple's story before you start.");
+  expect(await story.evaluate(a => getComputedStyle(a, "::after").content)).toBe('" ↗"');   // marked as opening elsewhere
+
+  await page.locator("#nextBtn").click();
+  await expect(page.locator("#prompt a")).toHaveCount(1);              // the javascript: one stays plain text
+  await expect(page.locator("#prompt a")).toHaveText("this plaque");
+  await expect(page.locator("#prompt")).toContainText("[this](javascript:alert(1))");
+  expect(await page.locator("#prompt").evaluate(el => el.innerText.split("\n")[1])).toBe("Then answer in LoQuiz.");
+
+  const [tab] = await Promise.all([context.waitForEvent("page"), page.locator("#prompt a").click()]);
+  await tab.waitForLoadState();
+  expect(tab.url()).toBe("https://history.test/plaque");
+  await expect(page.locator("#sheetplace"), "the game is still on the same challenge").toHaveText("challenge 1 of 3");
+  expect(page.url()).toContain("chinatown-hunt.html");
+
+  // Links on the clues screen too.
+  for (let i = 0; i < 2; i++) await page.locator("#nextBtn").click();
+  await page.locator("#finishBtn").click();
+  await page.evaluate(() => {
+    const k = "chinatown-hunt:chinatown-historical-hunt", d = JSON.parse(localStorage.getItem(k));
+    d.progress.revealed = true; localStorage.setItem(k, JSON.stringify(d));
+  });
+  await page.reload();
+  await page.locator("#startBtn").click();
+  await expect(page.locator("#clueList li").first().locator("a")).toHaveAttribute("href", "https://history.test/ledger");
+  await expect(page.locator("#suspectList li").first().locator("span a")).toHaveAttribute("href", "https://history.test/tan");
+});

@@ -363,6 +363,7 @@ setInterval(() => { renderClock(); checkReveal(); }, 1000); renderClock();
    ════════════════════════════════════════════════════════════════════ */
 const ui = {
   startScreen: true,     // the admin file turns this off
+  revealPreview: false,  // the admin file is previewing the clues screen
 };
 
 // Tiny element builder; text always goes in as textContent, never as HTML.
@@ -405,6 +406,13 @@ function preloadImages(){
   for (const url of Play.imageUrls(GAME)) { const img = new Image(); img.src = url; preloaded.push(img); }
 }
 
+// Organiser text with its [words](address) links as real links. Links open in a new tab so the game
+// (and its GPS) stays open behind them.
+function linked(text){
+  return Play.parseLinks(text).map(p => p.href
+    ? h("a", { href: p.href, target: "_blank", rel: "noopener noreferrer", class: "textlink" }, p.text)
+    : document.createTextNode(p.text));
+}
 // replaceChildren prints null as the text "null"; this skips anything that isn't there.
 function fill(el, ...children){ el.replaceChildren(...children.flat().filter(c => c != null && c !== false)); }
 
@@ -426,7 +434,7 @@ function renderSheet(){
     const n = stage.total;
     fill(body,
       closingNote,
-      h("p", { id:"sheettext" }, l.arrivalText || ""),
+      h("p", { id:"sheettext" }, linked(l.arrivalText)),
       n ? h("p", { class:"small" }, `${n} challenge${n === 1 ? "" : "s"} here. Answer them in LoQuiz, then finish this location before moving on.`) : null,
       h("div", { class:"navrow" },
         n ? h("button", { id:"nextBtn", class:"primary", onclick: () => move(Play.next) }, "Start the challenges")
@@ -438,7 +446,7 @@ function renderSheet(){
     fill(body,
       closingNote,
       picture(task.image, "qimg", "Picture for this challenge"),
-      task.prompt ? h("p", { id:"prompt", class:"prompt" }, task.prompt) : null,
+      task.prompt ? h("p", { id:"prompt", class:"prompt" }, linked(task.prompt)) : null,
       h("div", { class:"navrow" },
         h("button", { id:"backBtn", class:"secondary", onclick: () => move(Play.back) }, "Back"),
         last ? h("button", { id:"finishBtn", class:"primary", onclick: finishActive }, finishLabel)
@@ -476,18 +484,19 @@ function checkReveal(){
   }
   renderReveal();
 }
-// preview: the admin file can show the screen without changing the team's progress.
-function renderReveal(preview = false){
-  const show = state.progress.revealed || preview;
+// ui.revealPreview: the admin file shows the screen without changing the team's progress.
+// It's kept on ui, not passed in, because the once-a-second check redraws this screen too.
+function renderReveal(){
+  const show = state.progress.revealed || ui.revealPreview;
   $("reveal").hidden = !show;
   if (!show) return;
   $("revealTitle").textContent = GAME.title;
-  $("revealLead").textContent = GAME.revealIntro ?? "";
+  $("revealLead").replaceChildren(...linked(GAME.revealIntro));
   $("clueList").replaceChildren(...(GAME.clues || []).map((c, i) =>
-    h("li", {}, h("p", {}, c.text), picture(c.image, "clueimg", `Picture for clue ${i + 1}`))));
+    h("li", {}, h("p", {}, linked(c.text)), picture(c.image, "clueimg", `Picture for clue ${i + 1}`))));
   $("suspectList").replaceChildren(...(GAME.suspects || []).map(s =>
     h("li", { class: s.image ? "withpic" : "" }, picture(s.image, "portrait", `Portrait of ${s.name}`),
-      h("div", { class:"who" }, h("strong", {}, s.name), s.blurb ? h("span", {}, s.blurb) : null))));
+      h("div", { class:"who" }, h("strong", {}, s.name), s.blurb ? h("span", {}, linked(s.blurb)) : null))));
 }
 
 $("override").onclick = e => {
@@ -531,7 +540,7 @@ function stopReal(){
    ════════════════════════════════════════════════════════════════════ */
 function showStart(){
   $("startTitle").textContent = GAME.title;
-  $("startIntro").textContent = GAME.intro ?? "";
+  $("startIntro").replaceChildren(...linked(GAME.intro));
   $("startBtn").textContent = state.startedAt ? "Continue" : "Begin";
   $("start").hidden = false;
 }

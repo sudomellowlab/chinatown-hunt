@@ -206,3 +206,59 @@ test("importing something that isn't an exported game is refused", async ({ page
   await page.locator("#importGame").setInputFiles({ name: "notes.html", mimeType: "text/html", buffer: Buffer.from("<p>hello</p>") });
   await expect(items(page)).toHaveCount(THK.tasks.length);
 });
+
+test("Add link turns the selected words into a link; a phone shows it", async ({ page, browser }) => {
+  await items(page).first().locator(".tedit").click();
+  const box = page.locator("#tfPrompt");
+  await box.fill("Read the temple history first.");
+  await box.evaluate(el => { const i = el.value.indexOf("temple history"); el.focus(); el.setSelectionRange(i, i + "temple history".length); });
+  admin.expectDialog('Web address for "temple history":', { accept: true, value: "https://history.test/thk" });
+  await page.locator("#taskForm .linktool .btn").click();
+  await expect(box).toHaveValue("Read the [temple history](https://history.test/thk) first.");
+  await page.locator("#tfSave").click();
+  await expect(prompts(page).first()).toHaveText("Read the [temple history](https://history.test/thk) first.");
+
+  // With nothing selected, it asks for the words too, and inserts at the cursor.
+  await page.locator("#arrivalEdit").fill("Welcome. ");
+  await page.locator("#arrivalEdit").evaluate(el => { el.focus(); el.setSelectionRange(el.value.length, el.value.length); });
+  admin.expectDialog("Words to show as the link:", { accept: true, value: "Opening hours" });
+  admin.expectDialog('Web address for "Opening hours":', { accept: true, value: "https://history.test/hours" });
+  await page.locator("#arrivalEdit").locator("xpath=following-sibling::div[contains(@class,'linktool')][1]").locator(".btn").click();
+  await expect(page.locator("#arrivalEdit")).toHaveValue("Welcome. [Opening hours](https://history.test/hours)");
+
+  const html = await exportGame(page);
+  const phone = await browser.newContext({ ...devices["Pixel 7"] });
+  try {
+    const phonePage = await phone.newPage();
+    const { app: player, done } = await createApp({ page: phonePage, context: phone });
+    await player.open({ html });
+    await player.begin(far(GAME.locations));
+    for (const p of route.approach) await player.fix(p);
+    for (let i = 0; i < 3; i++) await player.fix(offset(THK, 1, i * 120));
+    await expect(phonePage.locator("#sheettext a")).toHaveAttribute("href", "https://history.test/hours");
+    await phonePage.locator("#nextBtn").click();
+    await expect(phonePage.locator("#prompt a")).toHaveText("temple history");
+    done();
+  } finally {
+    await phone.close();
+  }
+});
+
+test("a link with a bad address is refused, and blocks export if typed by hand", async ({ page }) => {
+  await items(page).first().locator(".tedit").click();
+  await page.locator("#tfPrompt").fill("See the plaque.");
+  await page.locator("#tfPrompt").evaluate(el => { el.focus(); el.setSelectionRange(8, 14); });
+  admin.expectDialog('Web address for "plaque":', { accept: true, value: "plaque.html" });
+  admin.expectDialog("That web address isn't a web address.");
+  await page.locator("#taskForm .linktool .btn").click();
+  await expect(page.locator("#tfPrompt")).toHaveValue("See the plaque.");
+
+  await page.locator("#tfPrompt").fill("See the [plaque](plaque.html).");
+  await page.locator("#tfSave").click();
+  await expect(page.locator("#tfErrors")).toHaveText("Can't save yet: the link on \"plaque\" isn't a web address");
+  await page.locator("#tfCancel").click();
+
+  await page.locator("#arrivalEdit").fill("Start at the [gate](gate).");
+  await expect(page.locator("#exportGame")).toBeDisabled();
+  await expect(page.locator("#exportInfo")).toContainText("arrival text: the link on \"gate\" isn't a web address");
+});

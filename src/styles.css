@@ -290,3 +290,9 @@ input.plain{font-family:var(--serif);font-size:15px;padding:9px;border:1px solid
 #sheet .navrow #backBtn{flex:0 0 34%}
 #sheet .navrow .primary{flex:1}
 #sheet figure.qimg img{max-height:58vh}
+
+/* Links in the organiser's text: clearly tappable, marked as opening elsewhere. */
+a.textlink{color:var(--jade);font-weight:600;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px}
+a.textlink::after{content:" ↗";font-size:.8em;text-decoration:none;display:inline-block;margin-left:1px}
+.linktool{display:flex;align-items:center;gap:8px;margin:-2px 0 8px}
+.linktool .btn{flex:0 0 auto;min-width:0;min-height:32px;padding:4px 10px;font-size:12px}

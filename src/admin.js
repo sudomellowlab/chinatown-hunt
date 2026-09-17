@@ -695,6 +695,45 @@ $("tfSave").onclick = () => {
 };
 
 /* ════════════════════════════════════════════════════════════════════
+   LINKS IN TEXT — an Add link button under each text box that may hold
+   links. It wraps the selected words as [words](address); typing that by
+   hand works too. Bad addresses are listed by the export check.
+   ════════════════════════════════════════════════════════════════════ */
+function linkTool(box){
+  const row = document.createElement("div");
+  row.className = "linktool";
+  const btn = Object.assign(document.createElement("button"), { type:"button", className:"btn", textContent:"Add link" });
+  const hint = Object.assign(document.createElement("span"), { className:"note inline",
+    textContent:"Select words first, or type [words](https://…)" });
+  btn.onclick = () => {
+    const { selectionStart: a, selectionEnd: b, value } = box;
+    let words = value.slice(a, b).trim();
+    if (!words) {
+      words = (prompt("Words to show as the link:") ?? "").trim();
+      if (!words) return;
+    }
+    if (/[\[\]\n]/.test(words)) { alert("Link words can't include square brackets or line breaks."); return; }
+    const href = (prompt(`Web address for "${words}":`, "https://") ?? "").trim();
+    if (!href || href === "https://") return;
+    const problem = Play.linkProblem(href);
+    if (problem) { alert(`That web address ${problem}.`); return; }
+    const md = `[${words}](${href})`;
+    // Keep any spaces the selection had round its words.
+    const sel = value.slice(a, b), lead = sel.match(/^\s*/)[0], trail = sel.match(/\s*$/)[0];
+    box.value = value.slice(0, a) + (a === b ? md : lead + md + trail) + value.slice(b);
+    const caret = a + (a === b ? md.length : lead.length + md.length);
+    box.focus(); box.setSelectionRange(caret, caret);
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  row.append(btn, hint);
+  return row;
+}
+for (const id of ["tfPrompt", "arrivalEdit", "introEdit", "revealIntroEdit"]) {
+  const box = $(id), host = box.closest("label") || box;
+  host.after(linkTool(box));
+}
+
+/* ════════════════════════════════════════════════════════════════════
    CLUES & SUSPECTS — the game length, when the clues appear, and the two
    lists. Every field saves as you type; ↑ ↓ set the order they're shown in.
    ════════════════════════════════════════════════════════════════════ */
@@ -708,12 +747,12 @@ function renderMystery(){
     ? `Each team's clock starts when they tap Begin. Clues appear ${GAME.durationMinutes - GAME.revealMinutes} minutes in, or as soon as a team has finished every location.`
     : "";
   editableList("clueEdit", "clueCount", GAME.clues, "clue", c => [
-    field("textarea", c.text, "What the teams read", v => { c.text = v; }),
+    ...withLinkTool(field("textarea", c.text, "What the teams read", v => { c.text = v; })),
     ...imageField(c),
   ]);
   editableList("suspectEdit", "suspectCount", GAME.suspects, "suspect", s => [
     field("input", s.name, "Name", v => { s.name = v; }),
-    field("textarea", s.blurb || "", "One line about them (optional)", v => { s.blurb = v; }),
+    ...withLinkTool(field("textarea", s.blurb || "", "One line about them (optional)", v => { s.blurb = v; })),
     ...imageField(s),
   ]);
 }
@@ -731,6 +770,7 @@ function imageField(item){
   showImagePreview(prev, item.image);
   return [input, prev];
 }
+const withLinkTool = box => [box, linkTool(box)];
 function field(tag, value, placeholder, set){
   const el = document.createElement(tag);
   if (tag === "input") el.type = "text"; else el.rows = 2;
@@ -789,8 +829,8 @@ const previewClose = document.createElement("button");
 previewClose.id = "revealClose"; previewClose.className = "btn primary"; previewClose.hidden = true;
 previewClose.textContent = "Close preview (admin)";
 $("reveal").querySelector(".revealcard").prepend(previewClose);
-$("previewReveal").onclick = () => { renderReveal(true); previewClose.hidden = false; makeRoomForMap(); };
-previewClose.onclick = () => { previewClose.hidden = true; renderReveal(); };
+$("previewReveal").onclick = () => { ui.revealPreview = true; renderReveal(); previewClose.hidden = false; makeRoomForMap(); };
+previewClose.onclick = () => { ui.revealPreview = false; previewClose.hidden = true; renderReveal(); };
 
 /* ════════════════════════════════════════════════════════════════════
    MAP — the Google Maps key. It is saved with the draft and goes into the

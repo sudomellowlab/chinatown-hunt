@@ -107,13 +107,15 @@ first.
   panel and the map becomes Google's, with a Map/Satellite switch. Confirmed working with the real
   key on localhost on 16 September 2026. Without a key, or if
   Google refuses it, the map falls back to OpenStreetMap, and the panel says why.
+- Links: select words in a text box and click **Add link** (or type `[words](https://…)`);
+  teams see a tappable link that opens in a new tab.
 - Images: challenge questions, clues and suspects can each show a picture, linked by an
   `https://` address on your own server. **Check image links** in the admin panel tests them
   all. Phones download every picture when the team taps Begin.
 - Clues & suspects: you set the game length, how many minutes before the end they appear,
   and both lists. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 122 unit tests and 95 browser tests, run by CI on every push.
+- 124 unit tests and 105 browser tests, run by CI on every push.
 
 **Not built yet**
 1. **Real content.** The default game is placeholders: eight made-up locations, challenges,
