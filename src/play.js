@@ -1,15 +1,14 @@
 /* ════════════════════════════════════════════════════════════════════
    GAME RULES
-   Pure functions, no DOM, no imports. How challenges are answered, what
-   a team sees next at a location, which locations can open, and when the
-   clues & suspects are revealed. The admin tools use the validators; the
-   game uses the rest.
+   Pure functions, no DOM, no imports. What a team sees at a location,
+   which locations can open, and when the clues & suspects are revealed.
+   The admin tools use the validators; the game uses the rest.
 
    Rules (these override SPEC.md):
-   - A location's challenges come strictly in order.
-   - One attempt per challenge. No retry, no skip.
-   - No points on this site (scoring happens in LoQuiz): after answering,
-     nothing is shown; the next challenge appears. Hints are free.
+   - Nothing is answered on this site: teams answer in LoQuiz. A challenge
+     is text and an optional picture, nothing more.
+   - A location shows its arrival text, then its challenges one at a time
+     in order. Teams can go Back and Next; the last challenge has Finish.
    - Once a location opens, no other location can open until it's finished.
    - Reveal: from `revealMinutes` before the end of the team's own clock,
      or once every location is finished, no new location can open. A team
@@ -17,66 +16,27 @@
      screen shows, and stays.
 
    Progress shape (persisted by the game):
-     { active: locId|null, completed: [locId], answers: { taskId: { correct, hint, at } },
-       hints: { taskId: true }, intro: { locId: true }, revealed: bool }
-   Answers are keyed by permanent task id, so a re-uploaded game keeps them.
-   `correct` is recorded but never shown to the team.
+     { active: locId|null, completed: [locId], at: { locId: index }, revealed: bool }
+   `at` is the challenge a team is looking at; no entry means the arrival text.
 
    Challenges, clues and suspects may carry `image`: an https link to a
    picture on the organiser's server. Images are never embedded.
    ════════════════════════════════════════════════════════════════════ */
 const Play = {
-  TYPES: ["multiple_choice", "text", "number"],
   DEFAULT_DURATION_MINUTES: 120,
   DEFAULT_REVEAL_MINUTES: 20,
 
-  emptyProgress(){ return { active:null, completed:[], answers:{}, hints:{}, intro:{}, revealed:false }; },
+  emptyProgress(){ return { active:null, completed:[], at:{}, revealed:false }; },
 
-  // Lowercase, strip punctuation and symbols, collapse whitespace. Letters in any script survive.
-  normalize(text){
-    return String(text ?? "").normalize("NFKC").toLowerCase()
-      .replace(/[\p{P}\p{S}]/gu, " ").replace(/\s+/g, " ").trim();
-  },
-
-  // "1,839", " 1839 ", "1 839" → 1839. Returns NaN for anything that isn't a number.
-  parseNumber(text){
-    const s = String(text ?? "").trim().replace(/[\s,_]/g, "");
-    return /^[-+]?(\d+\.?\d*|\.\d+)$/.test(s) ? Number(s) : NaN;
-  },
-
-  isCorrect(task, response){
-    switch (task.type) {
-      case "multiple_choice": return Number.isInteger(response) && response === task.answer;
-      case "text": {
-        const r = Play.normalize(response);
-        return r !== "" && (task.accept || []).some(a => Play.normalize(a) === r);
-      }
-      case "number": {
-        const n = Play.parseNumber(response);
-        return Number.isFinite(n) && Math.abs(n - Number(task.answer)) <= Math.abs(Number(task.tolerance) || 0) + 1e-9;
-      }
-      default: return false;
-    }
-  },
-
-  // Next unanswered challenge at a location, in order, or null when all are answered.
-  nextTask(location, progress){
-    const tasks = location.tasks || [];
-    const i = tasks.findIndex(t => !progress.answers[t.id]);
-    return i < 0 ? null : { task: tasks[i], index: i, total: tasks.length };
-  },
-
-  /* What the team should see at their active location:
-       arrival  – the arrival text, before the first challenge
-       task     – the next challenge
-       summary  – every challenge answered */
+  /* What the team should see at a location:
+       arrival – the arrival text (before the first challenge, or after going Back from it)
+       task    – challenge `index` of `total`; `last` when it's the one with Finish */
   stage(location, progress){
     const tasks = location.tasks || [];
-    const anyAnswered = tasks.some(t => progress.answers[t.id]);
-    if (!progress.intro[location.id] && !anyAnswered) return { kind: "arrival" };
-    const next = Play.nextTask(location, progress);
-    if (next) return { kind: "task", ...next, hintShown: !!progress.hints[next.task.id] };
-    return { kind: "summary", total: tasks.length };
+    const at = progress.at?.[location.id];
+    if (!Number.isInteger(at) || !tasks.length) return { kind: "arrival", total: tasks.length };
+    const index = Math.max(0, Math.min(at, tasks.length - 1));   // a re-uploaded game may have fewer
+    return { kind: "task", task: tasks[index], index, total: tasks.length, last: index === tasks.length - 1 };
   },
 
   /* ── transitions: each returns a new progress object ── */
@@ -85,22 +45,29 @@ const Play = {
     if (progress.active || progress.revealed || progress.completed.includes(locId)) return progress;
     return { ...progress, active: locId };
   },
-  startChallenges(progress, locId){
-    return { ...progress, intro: { ...progress.intro, [locId]: true } };
+  // Move to challenge `index`, or back to the arrival text with -1.
+  goTo(progress, location, index){
+    const n = (location.tasks || []).length;
+    const at = { ...progress.at };
+    if (index < 0 || !n) delete at[location.id];
+    else at[location.id] = Math.min(index, n - 1);
+    return { ...progress, at };
   },
-  revealHint(progress, taskId){
-    if (progress.answers[taskId]) return progress;
-    return { ...progress, hints: { ...progress.hints, [taskId]: true } };
+  next(progress, location){
+    const s = Play.stage(location, progress);
+    return Play.goTo(progress, location, s.kind === "arrival" ? 0 : s.index + 1);
   },
-  // One attempt: an already-answered challenge keeps its first answer.
-  answer(progress, task, response, at = null){
-    if (progress.answers[task.id]) return { progress, repeated: true };
-    const result = { correct: Play.isCorrect(task, response), hint: !!progress.hints[task.id], at };
-    return { progress: { ...progress, answers: { ...progress.answers, [task.id]: result } }, repeated: false };
+  back(progress, location){
+    const s = Play.stage(location, progress);
+    return s.kind === "arrival" ? progress : Play.goTo(progress, location, s.index - 1);
   },
-  // Close the active location once all its challenges are answered.
+  // Finish is offered on the last challenge (or the arrival text of a location with none).
+  canFinish(location, progress){
+    const s = Play.stage(location, progress);
+    return progress.active === location.id && (s.kind === "task" ? s.last : s.total === 0);
+  },
   finish(progress, location){
-    if (progress.active !== location.id || Play.nextTask(location, progress)) return progress;
+    if (!Play.canFinish(location, progress)) return progress;
     const completed = progress.completed.includes(location.id) ? progress.completed : [...progress.completed, location.id];
     return { ...progress, active: null, completed };
   },
@@ -141,11 +108,15 @@ const Play = {
 
   // Bring stored progress into line with the game as it is now (a re-uploaded version, say).
   reconcile(progress, game){
-    const p = { ...Play.emptyProgress(), ...progress };
+    const { active, completed, at, revealed } = { ...Play.emptyProgress(), ...progress };
+    const p = { active, completed, at, revealed };
     const ids = new Set(game.locations.map(l => l.id));
     p.completed = (Array.isArray(p.completed) ? p.completed : []).filter(id => ids.has(id));
     if (!ids.has(p.active) || p.completed.includes(p.active)) p.active = null;
-    for (const k of ["answers", "hints", "intro"]) if (!p[k] || typeof p[k] !== "object") p[k] = {};
+    const kept = {};
+    for (const [id, i] of Object.entries(p.at && typeof p.at === "object" ? p.at : {}))
+      if (ids.has(id) && Number.isInteger(i) && i >= 0) kept[id] = i;
+    p.at = kept;
     p.revealed = p.revealed === true;
     return p;
   },
@@ -177,21 +148,9 @@ const Play = {
 
   validateTask(task){
     const problems = [];
-    if (!Play.TYPES.includes(task.type)) problems.push("choose a challenge type");
-    if (!String(task.prompt ?? "").trim()) problems.push("the question is empty");
+    if (!String(task.prompt ?? "").trim() && !String(task.image ?? "").trim()) problems.push("add some text or a picture");
     const img = Play.imageProblem(task.image);
     if (img) problems.push(img);
-    if (task.type === "multiple_choice") {
-      const opts = (task.options || []).map(o => String(o ?? "").trim());
-      if (opts.filter(Boolean).length < 2) problems.push("needs at least two options");
-      if (opts.some(o => !o)) problems.push("an option is empty");
-      if (!Number.isInteger(task.answer) || task.answer < 0 || task.answer >= opts.length) problems.push("mark the correct option");
-    }
-    if (task.type === "text" && !(task.accept || []).some(a => Play.normalize(a))) problems.push("add at least one accepted answer");
-    if (task.type === "number") {
-      if (!Number.isFinite(Number(task.answer)) || task.answer === "" || task.answer == null) problems.push("the answer must be a number");
-      if (task.tolerance != null && task.tolerance !== "" && !(Number(task.tolerance) >= 0)) problems.push("the tolerance must be 0 or more");
-    }
     return problems;
   },
 

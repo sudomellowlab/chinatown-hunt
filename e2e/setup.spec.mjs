@@ -55,9 +55,7 @@ test("rename, add, reorder and delete locations; the exported game follows exact
   await page.locator("#poiCoords").press("Enter");
   await page.locator("#arrivalEdit").fill("Welcome to the square.");
   await page.locator("#taskAdd").click();
-  await page.locator("#tfType").selectOption("text");
   await page.locator("#tfPrompt").fill("What is the square named after?");
-  await page.locator("#tfAccept").fill("the far east");
   await page.locator("#tfSave").click();
 
   // Move it up to second place; delete the old second (now third).
@@ -93,7 +91,7 @@ test("rename, add, reorder and delete locations; the exported game follows exact
     for (let i = 0; i < 3; i++) await player.fix(offset(spot, 1, i * 120));
     await expect(phonePage.locator("#sheetname")).toHaveText("Far East Square");
     await expect(phonePage.locator("#sheettext")).toHaveText("Welcome to the square.");
-    await phonePage.locator("#stageBtn").click();
+    await phonePage.locator("#nextBtn").click();
     await expect(phonePage.locator("#prompt")).toHaveText("What is the square named after?");
   });
 });

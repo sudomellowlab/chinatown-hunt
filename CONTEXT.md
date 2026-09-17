@@ -10,8 +10,9 @@ Last updated 16 September 2026, after step 4 (the timed clues & suspects screen)
 
 A GPS treasure hunt for Telok Ayer / Ann Siang Hill in Singapore. A team walks with one
 phone (their own); walking inside a location's circle opens it and presents its challenges one at a
-time. Two hours by default. Near the end of each team's clock a screen shows the
-clues and suspects. No points are shown on this site: scoring is done in LoQuiz.
+time: arrival text, then each challenge's text and picture, with Back and Next. Teams
+answer in LoQuiz; nothing is answered or scored on this site. Two hours by default. Near the
+end of each team's clock a screen shows the clues and suspects.
 
 **No server anywhere.** There are two HTML files, and that is the whole product:
 
@@ -95,8 +96,9 @@ first.
   screen text are editable too.
 - **Export game file** producing the participant file, with the admin tools stripped out
   and the content scrambled.
-- Challenges: multiple choice, typed answers, numbers, with free hints; the admin editor to
-  add, edit, reorder and delete them. Answers are recorded but right/wrong is never shown.
+- Challenges: text and an optional picture each, shown one at a time with Back and Next and
+  Finish location on the last; the admin editor to add, edit, reorder and delete them.
+  Nothing is answered on this site.
 - Google Maps: paste a Google Maps Platform key (Map Tiles API) under **Map** in the admin
   panel and the map becomes Google's, with a Map/Satellite switch. Confirmed working with the real
   key on localhost on 16 September 2026. Without a key, or if
@@ -107,7 +109,7 @@ first.
 - Clues & suspects: you set the game length, how many minutes before the end they appear,
   and both lists. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 125 unit tests and 88 browser tests, run by CI on every push.
+- 122 unit tests and 89 browser tests, run by CI on every push.
 
 **Not built yet**
 1. **Real content.** The default game is placeholders: eight made-up locations, challenges,
@@ -132,9 +134,9 @@ first.
 
 Agreed with you, and they override the older `SPEC.md`:
 - Challenges at a location run **strictly in order**.
-- **One attempt each.** No retries, no skip button.
-- **No points and no right/wrong shown.** Scoring happens in LoQuiz. After answering, the
-  team sees "Answer saved." and the next challenge. Hints are free.
+- **Nothing is answered here.** Teams answer in LoQuiz. A challenge is its text and an
+  optional picture: no answer boxes, options, hints or points.
+- **Back and Next** move between challenges; **Finish location** is on the last one.
 - **Clues on a timer.** Each team's clock starts at Begin. From the set number of minutes
   before the end (20 by default), or once every location is done, the clues & suspects
   screen takes over and stays.

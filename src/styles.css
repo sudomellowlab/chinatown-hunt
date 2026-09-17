@@ -90,12 +90,7 @@ body.dev #strip{top:30px;padding-top:7px}
 #sheet p.hint{font-size:16px;border-left:3px solid var(--brass);padding:4px 0 4px 12px;background:rgba(138,109,47,.08)}
 #sheet button{width:100%;padding:15px;min-height:52px;border:none;font-size:17px;margin-top:10px}
 #sheet button.primary{background:var(--ink);color:var(--sheet)}
-#sheet button.primary:disabled{background:var(--slate);opacity:.55}
 #sheet button.secondary{background:transparent;color:var(--ink);border:1px solid var(--ink)}
-#sheet .opts{display:flex;flex-direction:column;gap:9px;margin:4px 0 6px}
-#sheet .opt{margin:0;text-align:left;background:var(--linen);color:var(--ink);border:1.5px solid var(--ink)}
-#sheet .opt[aria-checked="true"]{background:var(--ink);color:var(--sheet)}
-#sheet .answer input{width:100%;font-family:var(--serif);font-size:20px;padding:13px 12px;min-height:52px;border:1.5px solid var(--ink);background:#fff;color:var(--ink)}
 .pin.active{background:var(--brass);border-color:var(--brass);color:#FFF8E6}
 
 /* ---------- dev drawer ---------- */
@@ -222,10 +217,6 @@ label.stack select,label.stack textarea,label.stack input{display:block;width:10
 .taskform input[type=text],.taskform input[type=number]{font-family:var(--serif);font-size:14px;padding:9px;border:1px solid var(--ink);background:var(--linen);min-height:40px}
 .pair{display:flex;gap:10px}
 .pair label{flex:1}
-.optrow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
-.optrow input[type=radio]{width:20px;height:20px;flex:0 0 auto;margin:0}
-.optrow .tfOpt{flex:1}
-.optrow .btn{min-height:36px;min-width:0;flex:0 0 auto;padding:4px 10px}
 details.more{margin-top:12px}
 details.more summary{cursor:pointer;font-size:13px;color:var(--slate)}
 /* While a location sheet is up, keep the admin button clear of the answers. */
@@ -273,7 +264,7 @@ figure.pic img{display:block;width:100%;height:auto;max-height:46vh;object-fit:c
 input.imglink{font-family:var(--mono);font-size:12px}
 
 /* Keep the line breaks and blank lines the admin typed. */
-#startIntro,#sheettext,#prompt,#sheet p.hint,.cluelist li p,.suspectlist span,#reveal .lead{white-space:pre-line}
+#startIntro,#sheettext,#prompt,.cluelist li p,.suspectlist span,#reveal .lead{white-space:pre-line}
 
 /* ---------- base map ---------- */
 .leaflet-control-attribution .gmaps{font-family:Roboto,Arial,sans-serif;font-weight:500;color:#3c4043;margin-right:6px}
@@ -282,3 +273,7 @@ input.imglink{font-family:var(--mono);font-size:12px}
 .maptype button + button{border-left:1px solid var(--linen-deep)}
 .maptype button[aria-pressed="true"]{background:var(--ink);color:var(--sheet)}
 input.plain{font-family:var(--serif);font-size:15px;padding:9px;border:1px solid var(--ink);background:var(--linen);min-height:40px}
+#sheet .navrow{display:flex;gap:10px;margin-top:6px}
+#sheet .navrow button{margin-top:0}
+#sheet .navrow #backBtn{flex:0 0 34%}
+#sheet .navrow .primary{flex:1}

@@ -56,9 +56,8 @@ test("a participant who reloads sees Continue and keeps their progress", async (
   await app.begin(far(GAME.locations));
   for (let i = 0; i < 3; i++) await app.fix(offset(loc, 1, i * 120));
   await expect(page.locator("#sheetname")).toHaveText(loc.name);
-  await page.locator("#stageBtn").click();                        // start the challenges
-  await page.locator(".opt").nth(loc.tasks[0].answer).click();
-  await page.locator("#stageBtn").click();                        // submit
+  await page.locator("#nextBtn").click();                         // start the challenges
+  await page.locator("#nextBtn").click();                         // to challenge 2
   await expect(page.locator("#sheetplace")).toHaveText(`challenge 2 of ${loc.tasks.length}`);
 
   await page.reload();

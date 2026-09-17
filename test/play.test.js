@@ -1,122 +1,93 @@
-// Game rules: answering, sequencing, locking, the timed reveal, validation. Run with: node --test
+// Game rules: stepping through a location, locking, the timed reveal, validation. Run with: node --test
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { Play } from "../src/play.js";
 
-const mc   = { id: "mc", type: "multiple_choice", prompt: "Which?", options: ["A", "B", "C"], answer: 1, hint: "Not A" };
-const txt  = { id: "tx", type: "text", prompt: "Who?", accept: ["Hokkien", "hokkien people"] };
-const num  = { id: "nm", type: "number", prompt: "When?", answer: 1842, tolerance: 1 };
 const at = { lat: 1.28, lng: 103.84 };
-const loc  = { id: "thk", name: "Thian Hock Keng", ...at, tasks: [mc, txt, num] };
-const other = { id: "amoy", name: "Amoy Street", ...at, tasks: [{ id: "a1", type: "text", prompt: "?", accept: ["x"] }] };
+const t1 = { id: "t1", prompt: "First" }, t2 = { id: "t2", prompt: "Second", image: "https://a.sg/2.jpg" }, t3 = { id: "t3", prompt: "Third" };
+const loc  = { id: "thk", name: "Thian Hock Keng", ...at, tasks: [t1, t2, t3] };
+const other = { id: "amoy", name: "Amoy Street", ...at, tasks: [{ id: "a1", prompt: "?" }] };
 const empty = { id: "green", name: "Telok Ayer Green", ...at, tasks: [] };
 const MIN = 60000;
 const game = {
   title: "Test hunt", durationMinutes: 120, revealMinutes: 20, locations: [loc, other, empty],
   clues: [{ id: "c1", text: "A clue" }], suspects: [{ id: "s1", name: "Someone", blurb: "" }],
 };
+const open = () => Play.activate(Play.emptyProgress(), "thk");
 
-describe("checking answers", () => {
-  test("multiple choice: only the marked option, by index", () => {
-    assert.equal(Play.isCorrect(mc, 1), true);
-    assert.equal(Play.isCorrect(mc, 0), false);
-    assert.equal(Play.isCorrect(mc, "1"), false);
-    assert.equal(Play.isCorrect(mc, undefined), false);
+describe("stepping through a location", () => {
+  test("arrival text first, then each challenge in order with Next", () => {
+    let p = open();
+    assert.deepEqual(Play.stage(loc, p), { kind: "arrival", total: 3 });
+    p = Play.next(p, loc);
+    assert.deepEqual(Play.stage(loc, p), { kind: "task", task: t1, index: 0, total: 3, last: false });
+    p = Play.next(p, loc);
+    assert.equal(Play.stage(loc, p).task, t2);
+    p = Play.next(p, loc);
+    assert.deepEqual(Play.stage(loc, p), { kind: "task", task: t3, index: 2, total: 3, last: true });
+    assert.equal(Play.stage(loc, Play.next(p, loc)).index, 2, "Next on the last one stays there");
   });
 
-  test("text: any accepted answer, ignoring case, punctuation, spacing and extra symbols", () => {
-    for (const ok of ["hokkien", "  HOKKIEN ", "Hokkien!", "hokkien   people", "Hokkien-people", "“Hokkien”"])
-      assert.equal(Play.isCorrect(txt, ok), true, ok);
-    for (const bad of ["hokkiens", "teochew", "", "   ", "!!!", null])
-      assert.equal(Play.isCorrect(txt, bad), false, String(bad));
-  });
-
-  test("text: works for answers in other scripts", () => {
-    assert.equal(Play.isCorrect({ type: "text", accept: ["天福宫"] }, " 天福宫。"), true);
-  });
-
-  test("number: within the tolerance, accepting common formatting", () => {
-    for (const ok of ["1842", "1841", "1843", " 1,842 ", "1842.0", "1 842"]) assert.equal(Play.isCorrect(num, ok), true, ok);
-    for (const bad of ["1840", "1844", "eighteen forty-two", "", "1842a", "--1842"]) assert.equal(Play.isCorrect(num, bad), false, bad);
-    assert.equal(Play.isCorrect({ type: "number", answer: 8 }, "8"), true);
-    assert.equal(Play.isCorrect({ type: "number", answer: 8 }, "9"), false, "no tolerance means exact");
-  });
-});
-
-describe("answering", () => {
-  test("records whether it was right, whether a hint was used, and when; nothing about points", () => {
-    let p = Play.revealHint(Play.emptyProgress(), "mc");
-    p = Play.answer(p, mc, 1, 1234).progress;
-    p = Play.answer(p, txt, "nope", 5678).progress;
-    assert.deepEqual(p.answers, {
-      mc: { correct: true, hint: true, at: 1234 },
-      tx: { correct: false, hint: false, at: 5678 },
-    });
-    assert.ok(!JSON.stringify(p).includes("point"));
-  });
-
-  test("one attempt: answering again changes nothing", () => {
-    const p = Play.answer(Play.emptyProgress(), mc, 0).progress;
-    const again = Play.answer(p, mc, 1);
-    assert.equal(again.repeated, true);
-    assert.deepEqual(again.progress, p);
-  });
-
-  test("a hint can't be revealed after answering", () => {
-    const p = Play.answer(Play.emptyProgress(), mc, 1).progress;
-    assert.deepEqual(Play.revealHint(p, "mc"), p);
-  });
-});
-
-describe("sequence at a location", () => {
-  test("arrival first, then the challenges strictly in order, then the summary", () => {
-    let p = Play.activate(Play.emptyProgress(), "thk");
+  test("Back goes to the previous challenge, and from the first back to the arrival text", () => {
+    let p = Play.goTo(open(), loc, 2);
+    p = Play.back(p, loc);
+    assert.equal(Play.stage(loc, p).index, 1);
+    p = Play.back(Play.back(p, loc), loc);
     assert.equal(Play.stage(loc, p).kind, "arrival");
-    p = Play.startChallenges(p, "thk");
-    assert.deepEqual(Play.stage(loc, p), { kind: "task", task: mc, index: 0, total: 3, hintShown: false });
-    p = Play.answer(p, mc, 0).progress;
-    assert.equal(Play.stage(loc, p).task, txt);
-    p = Play.revealHint(p, "tx");
-    assert.equal(Play.stage(loc, p).hintShown, true);
-    p = Play.answer(p, txt, "nope").progress;
-    assert.equal(Play.stage(loc, p).index, 2);
-    p = Play.answer(p, num, "1842").progress;
-    assert.deepEqual(Play.stage(loc, p), { kind: "summary", total: 3 });
+    assert.deepEqual(Play.back(p, loc), p, "Back on the arrival text does nothing");
   });
 
-  test("a location with no challenges goes straight from arrival to summary", () => {
-    const p = Play.startChallenges(Play.activate(Play.emptyProgress(), "green"), "green");
-    assert.equal(Play.stage(empty, p).kind, "summary");
+  test("Finish is only possible on the last challenge", () => {
+    let p = open();
+    assert.equal(Play.canFinish(loc, p), false);
+    assert.deepEqual(Play.finish(p, loc), p);
+    p = Play.goTo(p, loc, 1);
+    assert.equal(Play.canFinish(loc, p), false);
+    p = Play.next(p, loc);
+    assert.equal(Play.canFinish(loc, p), true);
+    p = Play.finish(p, loc);
+    assert.equal(p.active, null);
+    assert.deepEqual(p.completed, ["thk"]);
   });
 
-  test("a new challenge added after a team finished part of a location is simply next", () => {
-    let p = Play.startChallenges(Play.emptyProgress(), "thk");
-    p = Play.answer(p, mc, 1).progress;
-    const extra = { id: "new", type: "text", prompt: "Added", accept: ["y"] };
-    assert.equal(Play.stage({ ...loc, tasks: [mc, extra, txt, num] }, p).task.id, "new");
+  test("a location with no challenges finishes from its arrival text", () => {
+    const p = Play.activate(Play.emptyProgress(), "green");
+    assert.deepEqual(Play.stage(empty, p), { kind: "arrival", total: 0 });
+    assert.deepEqual(Play.stage(empty, Play.next(p, empty)), { kind: "arrival", total: 0 });
+    assert.equal(Play.canFinish(empty, p), true);
+    assert.deepEqual(Play.finish(p, empty).completed, ["green"]);
+  });
+
+  test("a location that isn't the open one can't be finished", () => {
+    const p = Play.goTo(Play.emptyProgress(), loc, 2);
+    assert.equal(Play.canFinish(loc, p), false);
+  });
+
+  test("a re-uploaded game with fewer challenges keeps the team on the last one that exists", () => {
+    const p = Play.goTo(open(), loc, 2);
+    const shorter = { ...loc, tasks: [t1, t2] };
+    assert.deepEqual(Play.stage(shorter, p), { kind: "task", task: t2, index: 1, total: 2, last: true });
+    assert.equal(Play.canFinish(shorter, p), true);
+  });
+
+  test("nothing about answers, hints or points is stored", () => {
+    let p = Play.finish(Play.goTo(open(), loc, 2), loc);
+    assert.deepEqual(Object.keys(p).sort(), ["active", "at", "completed", "revealed"]);
+    assert.ok(!/answer|hint|point|correct/i.test(JSON.stringify(p)));
   });
 });
 
 describe("one location at a time", () => {
   test("while a location is active, it is the only one that can open", () => {
-    const p = Play.activate(Play.emptyProgress(), "thk");
-    assert.deepEqual(Play.openable(game.locations, p).map(l => l.id), ["thk"]);
+    assert.deepEqual(Play.openable(game.locations, open()).map(l => l.id), ["thk"]);
   });
 
   test("activating another location while one is active does nothing", () => {
-    const p = Play.activate(Play.emptyProgress(), "thk");
-    assert.equal(Play.activate(p, "amoy").active, "thk");
+    assert.equal(Play.activate(open(), "amoy").active, "thk");
   });
 
-  test("finishing needs every challenge answered, then frees the map", () => {
-    let p = Play.startChallenges(Play.activate(Play.emptyProgress(), "thk"), "thk");
-    p = Play.answer(p, mc, 1).progress;
-    assert.equal(Play.finish(p, loc).active, "thk", "not finished with challenges left");
-    p = Play.answer(p, txt, "x").progress;
-    p = Play.answer(p, num, "0").progress;
-    p = Play.finish(p, loc);
-    assert.equal(p.active, null);
-    assert.deepEqual(p.completed, ["thk"]);
+  test("finishing frees the map for the rest", () => {
+    const p = Play.finish(Play.goTo(open(), loc, 2), loc);
     assert.deepEqual(Play.openable(game.locations, p).map(l => l.id), ["amoy", "green"]);
   });
 
@@ -126,9 +97,9 @@ describe("one location at a time", () => {
   });
 
   test("transitions never mutate the progress they're given", () => {
-    const p = Play.activate(Play.emptyProgress(), "thk");
+    const p = Play.goTo(open(), loc, 1);
     const snapshot = structuredClone(p);
-    Play.startChallenges(p, "thk"); Play.revealHint(p, "mc"); Play.answer(p, mc, 1); Play.finish(p, loc);
+    Play.next(p, loc); Play.back(p, loc); Play.goTo(p, loc, -1); Play.finish(Play.goTo(p, loc, 2), loc);
     Play.reveal(game, p, 0);
     assert.deepEqual(p, snapshot);
   });
@@ -155,12 +126,11 @@ describe("the clues & suspects reveal", () => {
   });
 
   test("a team part-way through a location finishes it first, then the reveal shows", () => {
-    let p = Play.startChallenges(Play.activate(fresh, "thk"), "thk");
+    let p = Play.next(Play.activate(fresh, "thk"), loc);
     assert.equal(Play.phase(game, p, 10 * MIN), "closing");
     assert.deepEqual(Play.openable(game.locations, p, true).map(l => l.id), ["thk"]);
     assert.equal(Play.reveal(game, p, 10 * MIN).revealed, false, "not while the location is in progress");
-    for (const t of loc.tasks) p = Play.answer(p, t, "x").progress;
-    p = Play.finish(p, loc);
+    p = Play.finish(Play.goTo(p, loc, 2), loc);
     assert.equal(Play.phase(game, p, 9 * MIN), "reveal");
     assert.equal(Play.reveal(game, p, 9 * MIN).revealed, true);
   });
@@ -189,38 +159,37 @@ describe("the clues & suspects reveal", () => {
 
 describe("reconcile", () => {
   test("fills in missing fields and drops locations the game no longer has", () => {
-    const p = Play.reconcile({ active: "gone", completed: ["thk", "gone"], answers: { mc: { correct: true } } }, game);
-    assert.deepEqual(p, { active: null, completed: ["thk"], answers: { mc: { correct: true } }, hints: {}, intro: {}, revealed: false });
+    const p = Play.reconcile({ active: "gone", completed: ["thk", "gone"], at: { thk: 1, gone: 2, amoy: -1, green: "x" } }, game);
+    assert.deepEqual(p, { active: null, completed: ["thk"], at: { thk: 1 }, revealed: false });
   });
   test("an active location that's also completed is no longer active", () => {
     assert.equal(Play.reconcile({ active: "thk", completed: ["thk"] }, game).active, null);
   });
-  test("keeps the reveal, and survives garbage", () => {
-    assert.equal(Play.reconcile({ revealed: true }, game).revealed, true);
-    assert.deepEqual(Play.reconcile({ completed: "x", answers: 5, revealed: "yes" }, game), Play.emptyProgress());
+  test("drops fields from older versions, keeps the reveal, and survives garbage", () => {
+    const p = Play.reconcile({ answers: { t1: { correct: true } }, hints: {}, intro: { thk: true }, revealed: true }, game);
+    assert.deepEqual(p, { active: null, completed: [], at: {}, revealed: true });
+    assert.deepEqual(Play.reconcile({ completed: "x", at: 5, revealed: "yes" }, game), Play.emptyProgress());
   });
 });
 
 describe("validation", () => {
   test("the sample game is valid", () => {
-    for (const t of [mc, txt, num]) assert.deepEqual(Play.validateTask(t), [], t.id);
     assert.deepEqual(Play.validateGame(game), []);
   });
 
-  test("names each challenge problem in plain words", () => {
-    assert.deepEqual(Play.validateTask({ type: "multiple_choice", prompt: " ", options: ["A", ""], answer: 5 }),
-      ["the question is empty", "needs at least two options", "an option is empty", "mark the correct option"]);
-    assert.deepEqual(Play.validateTask({ type: "text", prompt: "Q", accept: ["", " ! "] }), ["add at least one accepted answer"]);
-    assert.deepEqual(Play.validateTask({ type: "number", prompt: "Q", answer: "abc", tolerance: -1 }),
-      ["the answer must be a number", "the tolerance must be 0 or more"]);
-    assert.deepEqual(Play.validateTask({ type: "nope", prompt: "Q" }), ["choose a challenge type"]);
+  test("a challenge needs text or a picture, and a good picture link", () => {
+    assert.deepEqual(Play.validateTask({ prompt: "Just text" }), []);
+    assert.deepEqual(Play.validateTask({ prompt: "", image: "https://a.sg/p.jpg" }), []);
+    assert.deepEqual(Play.validateTask({ prompt: "  " }), ["add some text or a picture"]);
+    assert.deepEqual(Play.validateTask({}), ["add some text or a picture"]);
+    assert.deepEqual(Play.validateTask({ prompt: "x", image: "http://a.sg/p.jpg" }), ["the image link must start with https:// (phones block http images)"]);
   });
 
   test("validateGame says where each problem is, including duplicate ids", () => {
-    const bad = { ...game, locations: [{ id: "amoy", name: "Amoy Street", ...at, tasks: [txt, { ...mc, id: "tx", answer: null }] }] };
+    const bad = { ...game, locations: [{ id: "amoy", name: "Amoy Street", ...at, tasks: [t1, { id: "t1", prompt: "" }] }] };
     assert.deepEqual(Play.validateGame(bad), [
-      "Amoy Street, challenge 2: duplicate id tx",
-      "Amoy Street, challenge 2: mark the correct option",
+      "Amoy Street, challenge 2: duplicate id t1",
+      "Amoy Street, challenge 2: add some text or a picture",
     ]);
   });
 
@@ -244,7 +213,6 @@ describe("validation", () => {
     assert.match(Play.imageProblem("http://img.example.sg/lions.jpg"), /https:\/\/ \(phones block http images\)/);
     assert.match(Play.imageProblem("lions.jpg"), /isn't a web address/);
     assert.match(Play.imageProblem("ftp://x.sg/a.jpg"), /must start with https:\/\//);
-    assert.deepEqual(Play.validateTask({ ...mc, image: "http://x.sg/a.jpg" }), ["the image link must start with https:// (phones block http images)"]);
     assert.deepEqual(Play.validateGame({ ...game,
       clues: [{ id: "c", text: "t", image: "nope" }], suspects: [{ id: "s", name: "n", image: "http://x/y.png" }] }), [
       "Clues: clue 1: the image link isn't a web address",

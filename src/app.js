@@ -281,7 +281,6 @@ function activateLocation(id){
   const next = Play.activate(state.progress, id);
   if (next === state.progress) return false;
   state.progress = next;
-  ui.saved = false; ui.choice = null;
   styleLocation(id); save(); renderSheet(); render();
   if (navigator.vibrate) { try{ navigator.vibrate([40,60,40]); }catch(e){} }
   return true;
@@ -358,8 +357,6 @@ setInterval(() => { renderClock(); checkReveal(); }, 1000); renderClock();
    ════════════════════════════════════════════════════════════════════ */
 const ui = {
   startScreen: true,     // the admin file turns this off
-  saved: false,          // an answer was just recorded: say so, neutrally, on the next screen
-  choice: null,          // selected option index for the current multiple-choice challenge
 };
 
 // Tiny element builder; text always goes in as textContent, never as HTML.
@@ -412,88 +409,44 @@ function renderSheet(){
   const body = $("stage");
   $("sheetname").textContent = l.name;
 
-  const savedNote = ui.saved ? h("p", { id:"savedNote", class:"small" }, "Answer saved.") : null;
   const closingNote = revealDue()
     ? h("p", { id:"closingNote", class:"hint" }, "Time is nearly up. Finish this location to see the clues.") : null;
+  // Finishing the last location, or finishing once the clues are due, leads straight to the clues.
+  const finishLabel = Play.revealDue(GAME, Play.finish(state.progress, l), msLeft()) ? "Finish location and see the clues" : "Finish location";
+  const move = fn => { state.progress = fn(state.progress, l); save(); renderSheet(); $("sheet").scrollTop = 0; };
+
   if (stage.kind === "arrival") {
     $("sheetplace").textContent = "you have arrived";
-    const n = (l.tasks || []).length;
+    const n = stage.total;
     fill(body,
-      h("p", { id:"sheettext" }, l.arrivalText || ""),
-      h("p", { class:"small" }, n ? `${n} challenge${n === 1 ? "" : "s"} here. One answer each, and you finish this location before moving on.` : ""),
       closingNote,
-      h("button", { id:"stageBtn", class:"primary", onclick: () => {
-        state.progress = Play.startChallenges(state.progress, l.id); save(); renderSheet();
-      } }, n ? "Start the challenges" : "Continue"),
-    );
-  } else if (stage.kind === "task") {
-    const { task, index, total, hintShown } = stage;
-    $("sheetplace").textContent = `challenge ${index + 1} of ${total}`;
-    const submit = h("button", { id:"stageBtn", class:"primary", disabled:true, onclick: () => submitAnswer(readResponse(task)) }, "Submit answer");
-    let answerArea;
-    if (task.type === "multiple_choice") {
-      answerArea = h("div", { class:"opts", role:"radiogroup" }, (task.options || []).map((o, i) =>
-        h("button", { class:"opt", role:"radio", "aria-checked": ui.choice === i ? "true" : "false", "data-index": i, onclick: () => {
-          ui.choice = i;
-          body.querySelectorAll(".opt").forEach(b => b.setAttribute("aria-checked", String(+b.dataset.index === i)));
-          submit.disabled = false;
-        } }, o)));
-      submit.disabled = ui.choice == null;
-    } else {
-      const input = h("input", { id:"answerInput", type:"text", autocomplete:"off", autocapitalize:"off", spellcheck:"false",
-        inputmode: task.type === "number" ? "decimal" : "text", placeholder: task.type === "number" ? "Your number" : "Your answer",
-        oninput: e => { submit.disabled = !e.target.value.trim(); },
-        onkeydown: e => { if (e.key === "Enter" && !submit.disabled) { e.preventDefault(); submit.click(); } } });
-      answerArea = h("div", { class:"answer" }, input);
-    }
-    const hintArea = task.hint
-      ? (hintShown
-          ? h("p", { id:"hintText", class:"hint" }, `Hint: ${task.hint}`)
-          : h("button", { id:"hintBtn", class:"secondary", onclick: () => {
-              state.progress = Play.revealHint(state.progress, task.id); save(); renderSheet();
-            } }, "Show hint"))
-      : null;
-    fill(body,
-      savedNote, closingNote,
-      picture(task.image, "qimg", "Picture for this challenge"),
-      h("p", { id:"prompt", class:"prompt" }, task.prompt),
-      h("p", { class:"small" }, "One answer only. Check it before you submit."),
-      answerArea, hintArea, submit,
+      h("p", { id:"sheettext" }, l.arrivalText || ""),
+      n ? h("p", { class:"small" }, `${n} challenge${n === 1 ? "" : "s"} here. Answer them in LoQuiz, then finish this location before moving on.`) : null,
+      h("div", { class:"navrow" },
+        n ? h("button", { id:"nextBtn", class:"primary", onclick: () => move(Play.next) }, "Start the challenges")
+          : h("button", { id:"finishBtn", class:"primary", onclick: finishActive }, finishLabel)),
     );
   } else {
-    $("sheetplace").textContent = "location complete";
-    // Judged as if this location were already finished, so the last one leads straight to the clues.
-    const due = Play.revealDue(GAME, Play.finish(state.progress, l), msLeft());
+    const { task, index, total, last } = stage;
+    $("sheetplace").textContent = `challenge ${index + 1} of ${total}`;
     fill(body,
-      savedNote,
-      h("p", { id:"summary", class:"prompt" }, "You've finished this location."),
-      h("p", { class:"small" }, due ? "Time for the clues." : "Head for your next location."),
-      h("button", { id:"stageBtn", class:"primary", onclick: finishActive }, due ? "See the clues" : "Back to the map"),
+      closingNote,
+      picture(task.image, "qimg", "Picture for this challenge"),
+      task.prompt ? h("p", { id:"prompt", class:"prompt" }, task.prompt) : null,
+      h("div", { class:"navrow" },
+        h("button", { id:"backBtn", class:"secondary", onclick: () => move(Play.back) }, "Back"),
+        last ? h("button", { id:"finishBtn", class:"primary", onclick: finishActive }, finishLabel)
+             : h("button", { id:"nextBtn", class:"primary", onclick: () => move(Play.next) }, "Next")),
     );
   }
   $("sheet").classList.add("up");
-}
-
-function readResponse(task){
-  if (task.type === "multiple_choice") return ui.choice;
-  return $("answerInput")?.value ?? "";
-}
-
-// Record the one answer to the current challenge and move on. Whether it was right is never shown.
-function submitAnswer(response){
-  const l = locationById(state.progress.active); if (!l) return false;
-  const next = Play.nextTask(l, state.progress); if (!next) return false;
-  state.progress = Play.answer(state.progress, next.task, response, Date.now()).progress;
-  ui.saved = true; ui.choice = null;
-  save(); renderSheet(); render();
-  return true;
 }
 
 function finishActive(){
   const l = locationById(state.progress.active); if (!l) return;
   const next = Play.finish(state.progress, l);
   if (next === state.progress) return;
-  state.progress = next; ui.saved = false;
+  state.progress = next;
   styleLocation(l.id); save(); renderSheet(); render();
   checkReveal();
 }
@@ -506,7 +459,7 @@ function finishActive(){
 function checkReveal(){
   const next = Play.reveal(GAME, state.progress, msLeft());
   if (next !== state.progress) {
-    state.progress = next; ui.saved = false;
+    state.progress = next;
     save(); stopReal(); renderSheet(); render();
     if (navigator.vibrate) { try{ navigator.vibrate([60,80,60]); }catch(e){} }
   } else if (!state.progress.revealed && revealDue()) {
@@ -608,5 +561,5 @@ showStart();
 
 export { BUILD, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing, styleLocation,
   mapStatus, setMapSource, rebuildLocations,
-  $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, submitAnswer, finishActive, locationById,
+  $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, finishActive, locationById,
   startReal, stopReal, hideStart };

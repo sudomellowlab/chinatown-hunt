@@ -141,24 +141,10 @@
 
     <div id="taskForm" class="taskform" hidden>
       <h5 id="tfTitle">New challenge</h5>
-      <label class="stack">Type
-        <select id="tfType"><option value="multiple_choice">Multiple choice</option><option value="text">Typed answer</option><option value="number">Number</option></select></label>
-      <label class="stack">Question <textarea id="tfPrompt" class="prose" rows="2"></textarea></label>
+      <label class="stack">Challenge text <span class="note inline">what teams read; they answer in LoQuiz</span> <textarea id="tfPrompt" class="prose" rows="3"></textarea></label>
       <label class="stack">Image link <span class="note inline">optional, https:// on your server</span>
         <input type="text" id="tfImage" class="imglink" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/picture.jpg"></label>
       <div class="imgprev" id="tfImagePrev"></div>
-      <div id="tfMC">
-        <div class="stack">Options <span class="note inline">select the correct one</span></div>
-        <div id="tfOptions"></div>
-        <div class="row"><button class="btn" id="tfAddOption">Add option</button></div>
-      </div>
-      <label class="stack" id="tfText">Accepted answers, one per line <span class="note inline">case, spacing and punctuation don't matter</span>
-        <textarea id="tfAccept" class="prose" rows="3"></textarea></label>
-      <div class="pair" id="tfNumber">
-        <label class="stack">Answer <input type="text" id="tfAnswer" inputmode="decimal"></label>
-        <label class="stack">Allow ± <input type="text" id="tfTolerance" inputmode="decimal" placeholder="0"></label>
-      </div>
-      <label class="stack">Hint <span class="note inline">optional, free for the team to reveal</span> <textarea id="tfHint" class="prose" rows="2"></textarea></label>
       <div class="note bad" id="tfErrors"></div>
       <div class="row"><button class="btn primary" id="tfSave">Save challenge</button><button class="btn" id="tfCancel">Cancel</button></div>
     </div>
@@ -272,7 +258,7 @@
     <div id="state"></div>
     <div class="row" style="margin-top:11px">
       <button class="btn" id="forceOpen">Open nearest</button>
-      <button class="btn" id="solveOne">Answer correctly</button>
+      <button class="btn" id="solveOne">Next challenge</button>
       <button class="btn" id="solveAll">Finish location</button>
       <button class="btn warn" id="reset">Reset progress</button>
     </div>

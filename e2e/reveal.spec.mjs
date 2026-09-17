@@ -68,24 +68,19 @@ test("a team part-way through a location finishes it first, then sees the clues"
   await app.open({ file: "play" });
   await app.begin(far(GAME.locations));
   await arriveAtTemple(app);
-  await page.locator("#stageBtn").click();                       // start the challenges
-  const [mc, , txt] = THK.tasks;
-  await page.locator(".opt").nth(mc.answer).click();
-  await page.locator("#stageBtn").click();
-  await page.locator("#answerInput").fill("7");                  // typed but not yet submitted
+  await page.locator("#nextBtn").click();                        // start the challenges
+  await page.locator("#nextBtn").click();                        // on challenge 2
 
   await page.clock.fastForward(revealAt + MIN);
   await expect(page.locator("#closingNote")).toHaveText("Time is nearly up. Finish this location to see the clues.");
-  await expect(page.locator("#answerInput"), "a half-typed answer survives the notice").toHaveValue("7");
+  await expect(page.locator("#sheetplace"), "the team stays where they were").toHaveText("challenge 2 of 3");
   await expect(reveal(page)).toBeHidden();
   await expect(page.locator("#target")).toHaveText(THK.name);
 
-  await page.locator("#stageBtn").click();                       // submit 2
-  await page.locator("#answerInput").fill(txt.accept[0]);
-  await page.locator("#stageBtn").click();                       // submit 3
-  await expect(page.locator("#summary")).toHaveText("You've finished this location.");
-  await expect(page.locator("#stageBtn")).toHaveText("See the clues");
-  await page.locator("#stageBtn").click();
+  await page.locator("#nextBtn").click();
+  await expect(page.locator("#closingNote")).toBeVisible();
+  await expect(page.locator("#finishBtn")).toHaveText("Finish location and see the clues");
+  await page.locator("#finishBtn").click();
   await expectClues(page);
 });
 
@@ -97,13 +92,9 @@ test("finishing every location brings the clues forward", async ({ app, page }) 
   await app.open({ file: "play", html, pins: 1 });
   await app.begin(far(GAME.locations));
   for (let i = 0; i < 3; i++) await app.fix(offset(THK, 1, i * 120));
-  await page.locator("#stageBtn").click();
-  const [mc, num, txt] = THK.tasks;
-  await page.locator(".opt").nth(mc.answer).click(); await page.locator("#stageBtn").click();
-  await page.locator("#answerInput").fill(String(num.answer)); await page.locator("#stageBtn").click();
-  await page.locator("#answerInput").fill(txt.accept[0]); await page.locator("#stageBtn").click();
-  await expect(page.locator("#stageBtn")).toHaveText("See the clues");
-  await page.locator("#stageBtn").click();
+  for (let i = 0; i < 3; i++) await page.locator("#nextBtn").click();
+  await expect(page.locator("#finishBtn")).toHaveText("Finish location and see the clues");
+  await page.locator("#finishBtn").click();
   await expectClues(page, game);
   await expect(page.locator("#clock")).toHaveText(/^1:5\d:\d\d$/);   // well before the reveal time
 });

@@ -28,21 +28,8 @@ async function deleteAll(page) {
 }
 async function addChallenge(page, t) {
   await page.locator("#taskAdd").click();
-  await page.locator("#tfType").selectOption(t.type);
   await page.locator("#tfPrompt").fill(t.prompt);
-  if (t.type === "multiple_choice") {
-    for (let i = 0; i < t.options.length; i++) {
-      if (i >= await page.locator(".optrow").count()) await page.locator("#tfAddOption").click();
-      await page.locator(".optrow .tfOpt").nth(i).fill(t.options[i]);
-    }
-    await page.locator(".optrow [type=radio]").nth(t.answer).check();
-  } else if (t.type === "text") {
-    await page.locator("#tfAccept").fill(t.accept.join("\n"));
-  } else {
-    await page.locator("#tfAnswer").fill(String(t.answer));
-    if (t.tolerance) await page.locator("#tfTolerance").fill(String(t.tolerance));
-  }
-  if (t.hint) await page.locator("#tfHint").fill(t.hint);
+  if (t.image) await page.locator("#tfImage").fill(t.image);
   await page.locator("#tfSave").click();
   await expect(page.locator("#taskForm")).toBeHidden();
 }
@@ -58,29 +45,32 @@ async function exportGame(page) {
 }
 
 const NEW = [
-  { type: "text", prompt: "What is the temple's name in English?", accept: ["Temple of Heavenly Happiness", "heavenly happiness"] },
-  { type: "number", prompt: "How many doors does the main hall have?", answer: 3, tolerance: 0, hint: "Count them from the courtyard." },
-  { type: "multiple_choice", prompt: "Which material are the pillars?", options: ["Granite", "Teak", "Brick"], answer: 0 },
+  { prompt: "Find the temple's name in English on the signboard." },
+  { prompt: "Count the doors of the main hall.", image: "https://img.test/hunt/doors.png" },
+  { prompt: "What are the pillars made of?\nLook closely at the base." },
 ];
 
-test("build challenges of every type, reorder them, and a phone plays them in that order", async ({ page, browser }) => {
+test("build challenges, reorder them, and a phone shows them in that order", async ({ page, browser }) => {
   await deleteAll(page);
+  await expect(page.locator("#taskCount")).toHaveText("No challenges yet");
   for (const t of NEW) await addChallenge(page, t);
-  await expect(prompts(page)).toHaveText(NEW.map(t => t.prompt));
+  await expect(prompts(page)).toHaveText(NEW.map(t => t.prompt.replace("\n", " ")));
+  await expect(items(page).nth(1).locator(".tpts")).toHaveText("image");
+  await expect(page.locator("#tfType, #tfAccept, #tfHint, #tfAnswer, #tfOptions")).toHaveCount(0);
 
-  // [text, number, choice] → up on 3rd → [text, choice, number] → up on 2nd → [choice, text, number] → down on 2nd.
+  // [a, b, c] → up on 3rd → [a, c, b] → up on 2nd → [c, a, b] → down on 2nd → [c, b, a].
   await items(page).nth(2).locator(".tup").click();
   await items(page).nth(1).locator(".tup").click();
   await items(page).nth(1).locator(".tdown").click();
-  const played = [NEW[2], NEW[1], NEW[0]];
-  await expect(prompts(page)).toHaveText(played.map(t => t.prompt));
+  const shown = [NEW[2], NEW[1], NEW[0]];
+  await expect(prompts(page)).toHaveText(shown.map(t => t.prompt.replace("\n", " ")));
   await expect(items(page).first().locator(".tup")).toBeDisabled();
   await expect(items(page).last().locator(".tdown")).toBeDisabled();
 
   await page.locator("#arrivalEdit").fill("Welcome to the temple. Look closely.");
   await expect(page.locator("#exportInfo")).toContainText("17 challenges");
   const html = await exportGame(page);
-  expect(html).not.toContain("Heavenly Happiness");
+  expect(html).not.toContain("pillars made of");
   expect(html).not.toContain("Welcome to the temple");
 
   const phone = await browser.newContext({ ...devices["Pixel 7"] });
@@ -93,17 +83,15 @@ test("build challenges of every type, reorder them, and a phone plays them in th
     for (let i = 0; i < 3; i++) await player.fix(offset(THK, 1, i * 120));
 
     await expect(phonePage.locator("#sheettext")).toHaveText("Welcome to the temple. Look closely.");
-    await phonePage.locator("#stageBtn").click();
-    for (const [i, t] of played.entries()) {
+    await phonePage.locator("#nextBtn").click();
+    for (const [i, t] of shown.entries()) {
       await expect(phonePage.locator("#sheetplace")).toHaveText(`challenge ${i + 1} of 3`);
-      await expect(phonePage.locator("#prompt")).toHaveText(t.prompt);
-      if (t.type === "multiple_choice") await phonePage.locator(".opt").nth(t.answer).click();
-      else await phonePage.locator("#answerInput").fill(t.type === "text" ? t.accept[1] : String(t.answer));
-      await phonePage.locator("#stageBtn").click();
+      expect(await phonePage.locator("#prompt").evaluate(el => el.innerText)).toBe(t.prompt);
+      await expect(phonePage.locator("#stage figure")).toHaveCount(t.image ? 1 : 0);
+      if (i < 2) await phonePage.locator("#nextBtn").click();
     }
-    await expect(phonePage.locator("#summary")).toHaveText("You've finished this location.");
-    const saved = await phonePage.evaluate(() => JSON.parse(localStorage.getItem("chinatown-hunt:chinatown-historical-hunt")).progress.answers);
-    expect(Object.values(saved).map(a => a.correct)).toEqual([true, true, true]);
+    await phonePage.locator("#finishBtn").click();
+    await expect(phonePage.locator("#reached")).toHaveText("1");
     done();
   } finally {
     await phone.close();
@@ -115,67 +103,73 @@ test("editing a challenge keeps its place and id; Cancel changes nothing", async
 
   await items(page).nth(1).locator(".tedit").click();
   await expect(page.locator("#tfTitle")).toHaveText("Edit challenge 2");
-  await expect(page.locator("#tfType")).toHaveValue(THK.tasks[1].type);
-  await expect(page.locator("#tfAnswer")).toHaveValue(String(THK.tasks[1].answer));
+  await expect(page.locator("#tfPrompt")).toHaveValue(THK.tasks[1].prompt);
   await page.locator("#tfPrompt").fill("Count the lions. Carefully.");
   await page.locator("#tfCancel").click();
   await expect(prompts(page).nth(1)).toHaveText(THK.tasks[1].prompt);
 
   await items(page).nth(1).locator(".tedit").click();
   await page.locator("#tfPrompt").fill("Count the lions. Carefully.");
-  await page.locator("#tfHint").fill("");
   await page.locator("#tfSave").click();
   await expect(prompts(page).nth(1)).toHaveText("Count the lions. Carefully.");
-  await expect(items(page).nth(1).locator(".tpts")).toHaveText("");
-  await expect(page.locator("#tfPoints, #tfHintPenalty")).toHaveCount(0);
   expect(await draftIds()).toEqual(THK.tasks.map(t => t.id));
 });
 
-test("an incomplete challenge can't be saved, and the form says what's missing", async ({ page }) => {
+test("an empty challenge can't be saved; a picture on its own is fine", async ({ page }) => {
   await page.locator("#taskAdd").click();
-  await page.locator("#tfPrompt").fill("Which way is the sea?");
-  await page.locator(".optrow .tfOpt").nth(0).fill("East");
-  await page.locator(".optrow .tfOpt").nth(1).fill("West");
   await page.locator("#tfSave").click();
-  await expect(page.locator("#tfErrors")).toHaveText("Can't save yet: mark the correct option");
+  await expect(page.locator("#tfErrors")).toHaveText("Can't save yet: add some text or a picture");
   await expect(items(page)).toHaveCount(THK.tasks.length);
 
-  await page.locator("#tfType").selectOption("text");
+  await page.locator("#tfImage").fill("https://img.test/hunt/only.png");
   await page.locator("#tfSave").click();
-  await expect(page.locator("#tfErrors")).toHaveText("Can't save yet: add at least one accepted answer");
+  await expect(items(page)).toHaveCount(THK.tasks.length + 1);
+  await expect(prompts(page).last()).toHaveText("(picture only)");
+});
 
-  await page.locator("#tfType").selectOption("number");
-  await page.locator("#tfAnswer").fill("east");
-  await page.locator("#tfSave").click();
-  await expect(page.locator("#tfErrors")).toHaveText("Can't save yet: the answer must be a number");
+test("challenges from older versions lose their answer fields on export", async ({ page }) => {
+  await page.locator("#arrivalEdit").fill(THK.arrivalText + " ");
+  await page.evaluate(() => {
+    const k = "chinatown-hunt-m1:draft", d = JSON.parse(localStorage.getItem(k));
+    d.game.locations.find(l => l.id === "thian-hock-keng").tasks[0] =
+      { id: "t-thk-01", type: "multiple_choice", prompt: "Old style", options: ["A", "B"], answer: 1, hint: "old hint", points: 100 };
+    localStorage.setItem(k, JSON.stringify(d));
+  });
+  await page.reload();
+  await expect(page.locator(".pin")).toHaveCount(8);
+  await admin.openTools();
+  await expect(page.locator("#exportGame")).toBeEnabled();
+  await page.locator("#arrivalEdit").fill(THK.arrivalText);          // saves the draft through the export path
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("chinatown-hunt-m1:draft")).game.locations.find(l => l.id === "thian-hock-keng").tasks[0]);
+  expect(saved).toEqual({ id: "t-thk-01", prompt: "Old style" });
 });
 
 test("export is blocked while any challenge has a problem, and the panel lists it", async ({ page }) => {
+  await page.locator("#capTarget").selectOption("amoy-street");
+  await items(page).first().locator(".tedit").click();
+  await page.locator("#tfImage").fill("amoy.png");
+  await expect(page.locator("#tfImagePrev")).toHaveText("the image link isn't a web address");
+  await page.locator("#tfSave").click();
+  await expect(page.locator("#tfErrors")).toHaveText("Can't save yet: the image link isn't a web address");
+  await page.locator("#tfCancel").click();
+
+  // A broken challenge that got into the draft (e.g. from an older version) blocks export.
+  await page.locator("#arrivalEdit").fill("Amoy Street welcome.");     // make sure a draft exists
   await page.evaluate(() => {
-    const k = "chinatown-hunt-m1:draft";
-    const d = JSON.parse(localStorage.getItem(k)) || { savedAt: Date.now(), game: null };
-    if (!d.game) throw new Error("no draft yet");
-    d.game.locations.find(l => l.id === "amoy-street").tasks[0].accept = [];
+    const k = "chinatown-hunt-m1:draft", d = JSON.parse(localStorage.getItem(k));
+    d.game.locations.find(l => l.id === "amoy-street").tasks[0] = { id: "t-amo-01", prompt: " " };
     localStorage.setItem(k, JSON.stringify(d));
-  }).catch(async () => {
-    // No draft yet: make one by editing arrival text, then corrupt it.
-    await page.locator("#arrivalEdit").fill(THK.arrivalText + " ");
-    await page.evaluate(() => {
-      const k = "chinatown-hunt-m1:draft", d = JSON.parse(localStorage.getItem(k));
-      d.game.locations.find(l => l.id === "amoy-street").tasks[0].accept = [];
-      localStorage.setItem(k, JSON.stringify(d));
-    });
   });
   await page.reload();
   await expect(page.locator(".pin")).toHaveCount(8);
   await admin.openTools();
   await expect(page.locator("#exportGame")).toBeDisabled();
-  await expect(page.locator("#exportInfo")).toHaveText("Fix this before exporting:\n• Amoy Street, challenge 1: add at least one accepted answer");
+  await expect(page.locator("#exportInfo")).toHaveText("Fix this before exporting:\n• Amoy Street, challenge 1: add some text or a picture");
 
   await page.locator("#capTarget").selectOption("amoy-street");
   await expect(items(page).first()).toHaveClass(/\bbad\b/);
   await items(page).first().locator(".tedit").click();
-  await page.locator("#tfAccept").fill("Xiamen");
+  await page.locator("#tfPrompt").fill("What was Amoy's later name?");
   await page.locator("#tfSave").click();
   await expect(page.locator("#exportGame")).toBeEnabled();
 });

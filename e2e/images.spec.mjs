@@ -33,7 +33,7 @@ test.describe("on a phone", () => {
     await app.begin(far(GAME.locations));
     for (const p of route.approach) await app.fix(p);
     for (let i = 0; i < 3; i++) await app.fix(offset(THK, 1, i * 120));
-    await page.locator("#stageBtn").click();
+    await page.locator("#nextBtn").click();
 
     const img = page.locator("#stage figure.qimg img");
     await expect(img).toHaveAttribute("src", `${IMG}/hunt/lions.png`);
@@ -43,9 +43,9 @@ test.describe("on a phone", () => {
     const [picY, promptY] = await Promise.all([img.boundingBox(), page.locator("#prompt").boundingBox()]);
     expect(picY.y).toBeLessThan(promptY.y);
 
-    await page.locator(".opt").nth(0).click(); await page.locator("#stageBtn").click();
+    await page.locator("#nextBtn").click();
     await expect(page.locator("#stage figure.qimg img")).toHaveAttribute("src", `${IMG}/hunt/doors.png`);
-    await page.locator("#answerInput").fill("2"); await page.locator("#stageBtn").click();
+    await page.locator("#nextBtn").click();
     await expect(page.locator("#prompt")).toHaveText(THK.tasks[2].prompt);
     await expect(page.locator("#stage figure")).toHaveCount(0);
   });
@@ -64,7 +64,7 @@ test.describe("on a phone", () => {
     await app.begin(far(GAME.locations));
     for (const p of route.approach) await app.fix(p);
     for (let i = 0; i < 3; i++) await app.fix(offset(THK, 1, i * 120));
-    await page.locator("#stageBtn").click();
+    await page.locator("#nextBtn").click();
 
     const fail = page.locator("#stage .picfail");
     await expect(fail).toBeVisible();
@@ -120,7 +120,7 @@ test.describe("in the admin panel", () => {
     await page.locator("#tfImage").fill(`${IMG}/hunt/lions.png`);
     await expect.poll(() => loaded(page.locator("#tfImagePrev img"))).toBe(true);
     await page.locator("#tfSave").click();
-    await expect(page.locator("#taskList > li").first().locator(".tpts")).toHaveText("image · hint");
+    await expect(page.locator("#taskList > li").first().locator(".tpts")).toHaveText("image");
 
     // Clue 1 and suspect 1.
     await page.locator("#clueEdit > li").first().locator("input.imglink").fill(`${IMG}/hunt/ledger.png`);
@@ -148,7 +148,7 @@ test.describe("in the admin panel", () => {
       await expect.poll(() => [...new Set(player.images.requests)].sort()).toEqual(["/hunt/ledger.png", "/hunt/lions.png", "/hunt/tan.png"]);
       for (const p of route.approach) await player.fix(p);
       for (let i = 0; i < 3; i++) await player.fix(offset(THK, 1, i * 120));
-      await phonePage.locator("#stageBtn").click();
+      await phonePage.locator("#nextBtn").click();
       await expect(phonePage.locator("#stage figure.qimg img")).toHaveAttribute("src", `${IMG}/hunt/lions.png`);
       done();
     } finally {
@@ -198,7 +198,7 @@ test("admin file: a location open during a reload shows the edited challenge, no
   await page.locator("#tfImage").fill(`${IMG}/hunt/lions.png`);
   await page.locator("#tfSave").click();
   await page.locator("#jump").selectOption(THK.id);
-  await page.locator("#stageBtn").click();
+  await page.locator("#nextBtn").click();
   await expect(page.locator("#prompt")).toHaveText("An edited first question.");
 
   await page.reload();

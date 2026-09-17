@@ -5,7 +5,7 @@ import { Play } from "./play.js";
 import { Pack } from "./pack.js";
 import { GAME } from "./game.js";
 import { store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing, styleLocation, mapStatus, setMapSource, rebuildLocations,
-  $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, submitAnswer, finishActive, locationById,
+  $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, finishActive, locationById,
   startReal, stopReal, hideStart } from "./app.js";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -313,20 +313,15 @@ $("forceOpen").onclick = () => {
   const next = ranges.find(g => !state.progress.completed.includes(g.id)); if (!next) return;
   if (activateLocation(next.id)) makeRoomForMap();
 };
-// Testing shortcuts: answer the current challenge correctly, or answer everything left and finish the location.
-function correctResponse(task){
-  return task.type === "multiple_choice" ? task.answer : task.type === "text" ? (task.accept || [])[0] : String(task.answer);
-}
+// Testing shortcuts: move to the next challenge, or finish the open location outright.
 $("solveOne").onclick = () => {
   const l = locationById(state.progress.active); if (!l) { alert("No location is open."); return; }
-  let p = Play.stage(l, state.progress);
-  if (p.kind === "arrival") { state.progress = Play.startChallenges(state.progress, l.id); p = Play.stage(l, state.progress); }
-  if (p.kind === "task") submitAnswer(correctResponse(p.task));
+  if (Play.canFinish(l, state.progress)) { finishActive(); return; }
+  state.progress = Play.next(state.progress, l); save(); renderSheet();
 };
 $("solveAll").onclick = () => {
   const l = locationById(state.progress.active); if (!l) { alert("No location is open."); return; }
-  state.progress = Play.startChallenges(state.progress, l.id);
-  for (let n = Play.nextTask(l, state.progress); n; n = Play.nextTask(l, state.progress)) submitAnswer(correctResponse(n.task));
+  state.progress = Play.goTo(state.progress, l, (l.tasks || []).length - 1);
   finishActive();
 };
 $("reset").onclick = () => {
@@ -538,8 +533,8 @@ function gameForExport(){
   game.locations = GAME.locations.map(l => {
     const out = { ...l };
     if (out.radius == null) delete out.radius;
-    // No points on this site: drop scoring fields left over from earlier drafts.
-    out.tasks = (l.tasks || []).map(({ points, hintPenalty, ...t }) => t);
+    // Challenges are text and a picture only; drop answer fields left over from earlier drafts.
+    out.tasks = (l.tasks || []).map(t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { image: t.image } : {}) }));
     return out;
   });
   return game;
@@ -598,7 +593,6 @@ $("resetDraft").onclick = () => {
    selected location. Add, edit, reorder (↑ ↓) and delete; each challenge
    is checked with Play.validateTask before it can be saved.
    ════════════════════════════════════════════════════════════════════ */
-const TYPE_LABELS = { multiple_choice: "Multiple choice", text: "Typed answer", number: "Number" };
 let editing = null;       // { locId, index } of the challenge in the form; index -1 for a new one
 
 const selectedLocation = () => GAME.locations.find(l => l.id === capSel.value);
@@ -614,12 +608,11 @@ function renderTasks(){
     const li = document.createElement("li");
     li.dataset.id = t.id;
     li.className = problems.length ? "bad" : "";
-    li.innerHTML = `<div class="tsum"><span class="tnum"></span><span class="ttype"></span><span class="tpts"></span></div><div class="tprompt"></div><div class="tprob"></div>
+    li.innerHTML = `<div class="tsum"><span class="tnum"></span><span class="tpts"></span></div><div class="tprompt"></div><div class="tprob"></div>
       <div class="tbtns"><button class="btn tup" title="Move up">↑</button><button class="btn tdown" title="Move down">↓</button><button class="btn tedit">Edit</button><button class="btn warn tdel">Delete</button></div>`;
     li.querySelector(".tnum").textContent = i + 1;
-    li.querySelector(".ttype").textContent = TYPE_LABELS[t.type] || t.type;
-    li.querySelector(".tpts").textContent = [t.image && "image", t.hint && "hint"].filter(Boolean).join(" · ");
-    li.querySelector(".tprompt").textContent = t.prompt || "(no question yet)";
+    li.querySelector(".tpts").textContent = t.image ? "image" : "";
+    li.querySelector(".tprompt").textContent = t.prompt || (t.image ? "(picture only)" : "(empty)");
     li.querySelector(".tprob").textContent = problems.join(" · ");
     li.querySelector(".tup").disabled = i === 0;
     li.querySelector(".tdown").disabled = i === tasks.length - 1;
@@ -654,21 +647,13 @@ function deleteTask(l, i){
 
 // The form works on a copy; nothing changes until Save succeeds.
 function openTaskForm(l, index){
-  const t = index >= 0 ? structuredClone(l.tasks[index])
-    : { type:"multiple_choice", prompt:"", options:["", ""], answer:null, hint:"" };
+  const t = index >= 0 ? structuredClone(l.tasks[index]) : { prompt:"" };
   editing = { locId: l.id, index };
   $("tfTitle").textContent = index >= 0 ? `Edit challenge ${index + 1}` : "New challenge";
-  $("tfType").value = t.type;
   $("tfPrompt").value = t.prompt || "";
-  renderOptions(t.type === "multiple_choice" ? (t.options || []) : ["", ""], t.type === "multiple_choice" ? t.answer : null);
-  $("tfAccept").value = (t.accept || []).join("\n");
-  $("tfAnswer").value = t.type === "number" && t.answer != null ? t.answer : "";
-  $("tfTolerance").value = t.type === "number" && t.tolerance ? t.tolerance : "";
-  $("tfHint").value = t.hint || "";
   $("tfImage").value = t.image || "";
   showImagePreview($("tfImagePrev"), t.image);
   $("tfErrors").textContent = "";
-  showTypeFields();
   $("taskForm").hidden = false; $("taskAdd").hidden = true;
   $("tfPrompt").focus();
 }
@@ -676,47 +661,9 @@ function closeTaskForm(){
   editing = null;
   $("taskForm").hidden = true; $("taskAdd").hidden = false;
 }
-function showTypeFields(){
-  const type = $("tfType").value;
-  $("tfMC").hidden = type !== "multiple_choice";
-  $("tfText").hidden = type !== "text";
-  $("tfNumber").hidden = type !== "number";
-}
-function renderOptions(options, correct){
-  $("tfOptions").replaceChildren(...options.map((o, i) => {
-    const row = document.createElement("div");
-    row.className = "optrow";
-    row.innerHTML = `<input type="radio" name="tfCorrect" title="Correct answer"><input type="text" class="tfOpt" placeholder="Option ${i + 1}"><button class="btn tfDel" title="Remove option">✕</button>`;
-    row.querySelector("[type=radio]").checked = i === correct;
-    row.querySelector(".tfOpt").value = o;
-    row.querySelector(".tfDel").onclick = () => {
-      const { options, correct } = readOptions();
-      options.splice(i, 1);
-      renderOptions(options, correct === i ? null : correct > i ? correct - 1 : correct);
-    };
-    return row;
-  }));
-}
-function readOptions(){
-  const rows = [...$("tfOptions").querySelectorAll(".optrow")];
-  return { options: rows.map(r => r.querySelector(".tfOpt").value), correct: rows.findIndex(r => r.querySelector("[type=radio]").checked) };
-}
+// A challenge is its text and an optional picture; teams answer it in LoQuiz.
 function readTaskForm(){
-  const type = $("tfType").value;
-  const num = (v, fallback) => v.trim() === "" ? fallback : Number(v);
-  const t = { type, prompt: $("tfPrompt").value.trim() };
-  if (type === "multiple_choice") {
-    const { options, correct } = readOptions();
-    t.options = options.map(o => o.trim());
-    t.answer = correct >= 0 ? correct : null;
-  } else if (type === "text") {
-    t.accept = $("tfAccept").value.split("\n").map(a => a.trim()).filter(Boolean);
-  } else {
-    t.answer = $("tfAnswer").value.trim() === "" ? null : Play.parseNumber($("tfAnswer").value);
-    t.tolerance = num($("tfTolerance").value, 0);
-  }
-  const hint = $("tfHint").value.trim();
-  if (hint) t.hint = hint;
+  const t = { prompt: $("tfPrompt").value.trim() };
   const image = $("tfImage").value.trim();
   if (image) t.image = image;
   return t;
@@ -724,8 +671,6 @@ function readTaskForm(){
 
 $("tfImage").addEventListener("input", e => showImagePreview($("tfImagePrev"), e.target.value));
 $("taskAdd").onclick = () => { const l = selectedLocation(); if (l) openTaskForm(l, -1); };
-$("tfType").onchange = showTypeFields;
-$("tfAddOption").onclick = () => { const { options, correct } = readOptions(); renderOptions([...options, ""], correct); };
 $("tfCancel").onclick = closeTaskForm;
 $("tfSave").onclick = () => {
   const l = GAME.locations.find(x => x.id === editing?.locId); if (!l) return;
@@ -733,7 +678,7 @@ $("tfSave").onclick = () => {
   const problems = Play.validateTask(t);
   if (problems.length) { $("tfErrors").textContent = "Can't save yet: " + problems.join(" · "); return; }
   l.tasks = l.tasks || [];
-  if (editing.index >= 0) l.tasks[editing.index] = { id: l.tasks[editing.index].id, ...t };   // old points fields are dropped
+  if (editing.index >= 0) l.tasks[editing.index] = { id: l.tasks[editing.index].id, ...t };   // fields from older versions are dropped
   else l.tasks.push({ id: Play.newTaskId(GAME), ...t });
   closeTaskForm(); saveDraft(); renderTasks();
 };
@@ -1037,7 +982,6 @@ slider("replaySpeed", v => (SPEEDS[+v] || 1) + "×", () => render());
 // Clears opened locations, streaks and override timers, on screen and in storage.
 function clearProgress(){
   Object.assign(state, { progress: Play.emptyProgress(), streaks:{}, nearSince:{}, overrideReady:[] });
-  ui.saved = false; ui.choice = null;
   GAME.locations.forEach(l => styleLocation(l.id));
   save(); renderSheet(); render(); renderReveal();
 }
