@@ -296,3 +296,14 @@ a.textlink{color:var(--jade);font-weight:600;text-decoration:underline;text-deco
 a.textlink::after{content:" ↗";font-size:.8em;text-decoration:none;display:inline-block;margin-left:1px}
 .linktool{display:flex;align-items:center;gap:8px;margin:-2px 0 8px}
 .linktool .btn{flex:0 0 auto;min-width:0;min-height:32px;padding:4px 10px;font-size:12px}
+
+/* ---------- organiser password box (field tools lock) ---------- */
+#unlock{position:fixed;inset:0;z-index:1990;background:#16202Bcc;display:flex;align-items:center;justify-content:center;padding:20px}
+#unlock .unlockcard{width:100%;max-width:380px;background:var(--sheet);border:1px solid var(--ink);padding:18px 20px}
+#unlock h2{margin:0 0 12px;font-size:20px}
+#unlock input{width:100%;font-size:18px;padding:10px;border:1px solid var(--ink);min-height:46px}
+#unlock p{margin:8px 0 0;min-height:1.4em;color:var(--mark)}
+#unlock .navrow{display:flex;gap:10px;margin-top:14px}
+#unlock button{flex:1;min-height:46px;font-size:16px;border:1px solid var(--ink)}
+#unlock button.primary{background:var(--ink);color:var(--sheet)}
+#unlock button.secondary{background:transparent}

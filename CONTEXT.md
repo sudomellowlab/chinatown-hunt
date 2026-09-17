@@ -63,7 +63,13 @@ Node 22+ only. `npm ci` is needed just for the browser tests.
   challenges appear exactly as a participant would see them. **Simulated walk → Draw path
   → Walk it** plays a walk at a chosen speed. A banner across the top says it is the admin
   file, and a gold notice marks simulated positions.
-- **Participant file:** it uses real GPS only. To demo it on a laptop, open Chrome DevTools
+- **Field tools in the exported file:** type a **Field tools password** in the Export
+  section before exporting. On a phone playing that file, tap the timer 5 times quickly (or
+  the title on the start, location or clues screen) and enter the password. The panel shows
+  position, accuracy and a fix log, and can pretend to be at a location (or wherever you tap
+  the map), open or finish a location, set the minutes left, show the clues, and restart the
+  phone. It only affects that phone, and it locks again when the page reloads.
+- **Participant file:** it uses real GPS unless the field tools are used. To demo it on a laptop, open Chrome DevTools
   → ⋮ → More tools → **Sensors** → Location → custom, e.g. `1.28092, 103.84760`
   (Thian Hock Keng), then press **Begin**. Otherwise show it on a phone from a hosted link.
 - **Phone view in a browser:** DevTools device toolbar, set to a phone size.
@@ -99,7 +105,8 @@ first.
   coordinates or a Google Maps link, set radius. The game title, start screen text and clues
   screen text are editable too.
 - **Export game file** producing the participant file, with the admin tools stripped out
-  and the content scrambled.
+  and the content scrambled. With a field tools password set, the file also carries a
+  developer panel, encrypted with that password (the password itself isn't in the file).
 - Challenges: text and an optional picture each, shown one at a time with Back and Next and
   Finish location on the last; the admin editor to add, edit, reorder and delete them.
   Nothing is answered on this site.
@@ -115,7 +122,7 @@ first.
 - Clues & suspects: you set the game length, how many minutes before the end they appear,
   and both lists. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 124 unit tests and 105 browser tests, run by CI on every push.
+- 131 unit tests and 108 browser tests, run by CI on every push.
 
 **Not built yet**
 1. **Real content.** The default game is placeholders: eight made-up locations, challenges,

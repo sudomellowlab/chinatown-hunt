@@ -8,6 +8,7 @@
 2. Under **Artifacts**, download **chinatown-hunt-admin.html**. It downloads as the HTML file itself, not a zip. You need to be signed in to GitHub, and artifacts expire after 30 days, so push a commit to get a fresh one.
 3. Open it in your computer's browser (double-click is fine). Drag the pins where you want them, then click **Export game file**.
 4. Upload the exported `chinatown-hunt.html` to a static HTTPS host such as Netlify Drop and give participants that link. Real GPS only works over HTTPS. Never hand out the admin file.
+5. Optional: set a **Field tools password** in the Export section before exporting. On a phone playing the exported game, tap the timer 5 times quickly and enter it to open the field tools (position, fix log, open or finish a location, clock, restart). The tools are encrypted with that password inside the file.
 
 **Want to change it?** Open a Codespace:
 

@@ -3,6 +3,7 @@ import { Walk } from "./session.js";
 import { Poi } from "./poi.js";
 import { Play } from "./play.js";
 import { Pack } from "./pack.js";
+import { Vault } from "./vault.js";
 import { GAME } from "./game.js";
 import { BUILD, KEY, store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing, styleLocation, mapStatus, setMapSource, rebuildLocations,
   $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, finishActive, locationById,
@@ -536,7 +537,11 @@ $("poiDownload").onclick = () => {
    ════════════════════════════════════════════════════════════════════ */
 const PARTICIPANT_TEMPLATE = "__PARTICIPANT_TEMPLATE__";
 const GAME_PACK_SLOT = '"__GAME_PACK__"';
-const canExport = PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).length === 2;
+// The field tools (field.js), as code. Export encrypts them with the organiser's password into this slot.
+const FIELD_TOOLS = "__FIELD_TOOLS__";
+const FIELD_PACK_SLOT = '"__FIELD_PACK__"';
+const canExport = PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).length === 2 && PARTICIPANT_TEMPLATE.split(FIELD_PACK_SLOT).length === 2
+  && FIELD_TOOLS.includes("function fieldTools");
 
 // The game exactly as it should reach participants: current locations and radii, default engine settings.
 function gameForExport(){
@@ -550,12 +555,38 @@ function gameForExport(){
   });
   return game;
 }
-function participantHtml(game = gameForExport()){
-  return PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).join(JSON.stringify(Pack.seal(game)));
+async function participantHtml(game = gameForExport()){
+  const password = fieldPassword();
+  const tools = password ? JSON.stringify(await Vault.seal(FIELD_TOOLS, password)) : "null";
+  return PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).join(JSON.stringify(Pack.seal(game))).split(FIELD_PACK_SLOT).join(tools);
 }
+
+/* The field tools password: kept in this browser only, never in the draft or the game file.
+   Empty means the exported file has no field tools at all. */
+const FIELD_PASS_KEY = ADMIN_KEY + ":fieldpass";
+const FIELD_PASS_MIN = 6;
+const fieldPassword = () => { try { return store.getItem(FIELD_PASS_KEY) || ""; } catch(e){ return ""; } };
+function fieldPassProblem(){
+  const p = fieldPassword();
+  return p && p.length < FIELD_PASS_MIN ? `Field tools password: use at least ${FIELD_PASS_MIN} characters, or leave it empty for no field tools` : null;
+}
+$("fieldPass").value = fieldPassword();
+$("fieldPass").addEventListener("input", e => {
+  try { e.target.value ? store.setItem(FIELD_PASS_KEY, e.target.value) : store.removeItem(FIELD_PASS_KEY); } catch(err){}
+  renderExport();
+});
+$("fieldPassShow").onclick = () => {
+  const box = $("fieldPass"), show = box.type === "password";
+  box.type = show ? "text" : "password";
+  $("fieldPassShow").textContent = show ? "Hide" : "Show";
+};
+function exportProblems(game = gameForExport()){
+  return [...Play.validateGame(game), fieldPassProblem()].filter(Boolean);
+}
+
 function renderExport(){
   const game = gameForExport();
-  const problems = Play.validateGame(game);
+  const problems = exportProblems(game);
   const moved = GAME.locations.filter(isMoved).length;
   const challenges = game.locations.reduce((n, l) => n + (l.tasks || []).length, 0);
   $("exportInfo").textContent = !canExport
@@ -563,7 +594,11 @@ function renderExport(){
     : problems.length
       ? `Fix ${problems.length === 1 ? "this" : "these"} before exporting:\n${problems.map(p => "• " + p).join("\n")}`
       : `${game.locations.length} locations${moved ? `, ${moved} moved from the default` : ""} · ${challenges} challenges. ` +
-        `The file has no admin tools and its content is scrambled. Upload it to your host; participants open the plain link.`;
+        `The file has no admin tools and its content is scrambled. Upload it to your host; participants open the plain link.` +
+        (fieldPassword() ? "" : "\nNo field tools password, so the file has no field tools.");
+  $("fieldInfo").textContent = fieldPassword()
+    ? `In the exported game, tap the timer 5 times quickly (or the title on the start, location or clues screen) and enter this password to open the field tools. Changing it only affects files you export from now on.`
+    : "Optional. Set one to be able to open the field tools (position, fix log, open or finish a location, clock, restart) on a phone playing the exported game.";
   $("exportInfo").classList.toggle("bad", canExport && problems.length > 0);
   $("draftInfo").textContent = draft.error || "Your changes are saved in this browser as you go.";
   $("draftInfo").classList.toggle("bad", !!draft.error);
@@ -571,9 +606,13 @@ function renderExport(){
   if (canExport && !problems.length && mapStatus.kind !== "google")
     $("exportInfo").textContent += "\nNote: this file will show OpenStreetMap, not Google Maps. Add a working Google Maps key under Map first.";
 }
-$("exportGame").onclick = () => {
-  if (Play.validateGame(gameForExport()).length) return;
-  downloadFile(new File([participantHtml()], "chinatown-hunt.html", { type:"text/html" }));
+$("exportGame").onclick = async () => {
+  if (exportProblems().length) return;
+  const btn = $("exportGame");
+  btn.disabled = true;
+  try { downloadFile(new File([await participantHtml()], "chinatown-hunt.html", { type:"text/html" })); }
+  catch(e){ alert(`Couldn't export: ${e.message}.`); }
+  finally { renderExport(); }
 };
 
 // Load a previously exported game file back in as the draft: the way to move work between computers

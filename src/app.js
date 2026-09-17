@@ -577,4 +577,4 @@ showStart();
 export { BUILD, KEY, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing, styleLocation,
   mapStatus, setMapSource, rebuildLocations,
   $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, finishActive, locationById,
-  msLeft, startReal, stopReal, showStart, hideStart };
+  msLeft, startReal, stopReal, showStart, hideStart, h };
