@@ -65,6 +65,7 @@ const hooks = {
   ringStyle: null,    // (id) → Leaflet path style, or null for the default look
   status: null,       // () → { dot, text } for the status strip, or null for the default
   mapSource: [],      // (mapStatus) whenever the base map changes or fails
+  revealPaused: null, // () → true while the clues must not come up on their own (the admin file, when not testing them)
   pinCreated: [],     // (location, marker) each time a location's pin is (re)drawn
 };
 
@@ -280,7 +281,7 @@ function onFix(fix, src = feed.source){
 function msLeft(){
   return state.startedAt ? state.clockMinutes * 60000 - (Date.now() - state.startedAt) : null;
 }
-const revealDue = () => Play.revealDue(GAME, state.progress, msLeft());
+const revealDue = () => !hooks.revealPaused?.() && Play.revealDue(GAME, state.progress, msLeft());
 
 // Open a location: it becomes the team's active location until every challenge is answered.
 function activateLocation(id){
@@ -462,7 +463,7 @@ function finishActive(){
    progress is finished. It stays for the rest of the game.
    ════════════════════════════════════════════════════════════════════ */
 function checkReveal(){
-  const next = Play.reveal(GAME, state.progress, msLeft());
+  const next = hooks.revealPaused?.() ? state.progress : Play.reveal(GAME, state.progress, msLeft());
   if (next !== state.progress) {
     state.progress = next;
     save(); stopReal(); renderSheet(); render();

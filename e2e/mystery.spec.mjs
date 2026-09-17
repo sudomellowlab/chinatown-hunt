@@ -136,3 +136,60 @@ test("once the clues are showing, simulated positions inside a location open not
   await expect.poll(async () => +(await page.locator("#fixcount").textContent())).toBeGreaterThan(3);
   await expect(page.locator(".pin.active, .pin.reached")).toHaveCount(0);
 });
+
+test.describe("while editing, the clues never come up on their own", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-09-20T09:00:00+08:00") });
+  });
+
+  test("not after hours at the admin panel, and locations still open for testing", async ({ app, page }) => {
+    await app.open();
+    await page.clock.fastForward(3 * 60 * MIN);
+    await expect(page.locator("#clock")).toHaveText("0:00:00");
+    await expect(page.locator("#reveal")).toBeHidden();
+    await app.openTools();
+    await page.locator("#jump").selectOption("thian-hock-keng");
+    await expect(page.locator("#sheetname")).toHaveText("Thian Hock Keng Temple");
+    await expect(page.locator("#closingNote")).toHaveCount(0);
+    await page.locator("#solveAll").click();
+    await expect(page.locator("#reveal")).toBeHidden();
+  });
+
+  test("not after finishing every location", async ({ app, page }) => {
+    await app.open();
+    await app.openTools();
+    const ids = await page.locator("#jump option").evaluateAll(os => os.map(o => o.value).filter(Boolean));
+    for (const id of ids) {
+      await page.locator("#jump").selectOption(id);
+      await expect(page.locator(".pin.active")).toHaveCount(1);
+      await page.locator("#solveAll").click();
+      await expect(page.locator(".pin.active")).toHaveCount(0);
+    }
+    await expect(page.locator(".pin.reached")).toHaveCount(ids.length);
+    await expect(page.locator("#reveal")).toBeHidden();
+  });
+
+  test("a clues screen left over from an earlier session is cleared", async ({ app, page }) => {
+    await app.open();
+    await page.evaluate(() => {
+      const k = "chinatown-hunt-admin:chinatown-historical-hunt", d = JSON.parse(localStorage.getItem(k));
+      d.progress.revealed = true;
+      localStorage.setItem(k, JSON.stringify(d));
+    });
+    await page.reload();
+    await expect(page.locator(".pin")).toHaveCount(8);
+    await expect(page.locator("#reveal")).toBeHidden();
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("chinatown-hunt-admin:chinatown-historical-hunt")).progress.revealed)).toBe(false);
+  });
+
+  test("but the preview keeps the real timing", async ({ app, page }) => {
+    await app.open();
+    await app.openTools();
+    const [pv] = await Promise.all([page.waitForEvent("popup"), page.locator("#previewGame").click()]);
+    await pv.clock.install({ time: new Date("2026-09-20T09:00:00+08:00") });
+    await pv.reload();
+    await pv.locator("#startBtn").click();
+    await pv.clock.fastForward((GAME.durationMinutes - GAME.revealMinutes) * MIN + 1000);
+    await expect(pv.locator("#reveal")).toBeVisible();
+  });
+});

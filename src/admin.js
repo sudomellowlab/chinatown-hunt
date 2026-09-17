@@ -24,6 +24,14 @@ document.title = `${GAME.title} · ${PREVIEW ? "Preview" : "Admin"}`;
 // Testing in the admin file runs the clock from each load, so an old test session never
 // opens straight onto the clues screen. Reset progress restarts it too.
 if (!PREVIEW) { state.startedAt = Date.now(); save(); renderClock(); }
+/* While editing, the clues never come up on their own: not from the clock, nor from finishing every
+   location. They do once the Clock slider is used to test them. A clues screen left from an earlier
+   session is cleared. The preview keeps the real timing. */
+let testingClues = false;
+if (!PREVIEW) {
+  hooks.revealPaused = () => !testingClues;
+  if (state.progress.revealed) { state.progress = { ...state.progress, revealed: false }; save(); }
+}
 
 /* ════════════════════════════════════════════════════════════════════
    THE DRAFT — the game as the admin is building it: locations, radii,
@@ -302,7 +310,7 @@ slider("defRad",   v => v+" m",  v => {
 slider("capRad",   v => v+" m",  v => setPoi(capSel.value, { radius:+v }),
   Engine.radiusOf(GAME.locations.find(l => l.id === capSel.value) || {}, state.cfg));
 $("clockSet").max = Math.max(GAME.durationMinutes, 1);
-slider("clockSet", v => v+" min", v => { state.clockMinutes = +v; state.startedAt = Date.now(); renderClock(); checkReveal(); }, state.clockMinutes);
+slider("clockSet", v => v+" min", v => { testingClues = true; state.clockMinutes = +v; state.startedAt = Date.now(); renderClock(); checkReveal(); }, state.clockMinutes);
 
 $("blowAcc").onclick = () => {
   const p = sim.at || map.getCenter();
@@ -328,6 +336,7 @@ $("solveAll").onclick = () => {
 };
 $("reset").onclick = () => {
   if (!confirm("Clear all game progress? Location edits and the walk recording are kept.")) return;
+  testingClues = false;
   clearProgress();
   state.clockMinutes = GAME.durationMinutes; $("clockSet").value = state.clockMinutes; $("clockSetO").textContent = state.clockMinutes + " min";
   state.startedAt = Date.now(); save(); renderClock(); renderReveal();
