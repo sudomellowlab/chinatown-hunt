@@ -2,7 +2,8 @@
 
 Everything needed to pick this up on another computer, show it to someone, or continue
 building it with Claude Code. Repo: `https://github.com/sudomellowlab/chinatown-hunt` (public).
-Last updated 16 September 2026, after step 4 (the timed clues & suspects screen).
+Last updated 17 September 2026: the real game is built, tested and uploaded to
+`https://nanobotinc.com/chinatown/`. See **5. Where the work stands** for open items.
 
 ---
 
@@ -22,7 +23,9 @@ end of each team's clock a screen shows the clues and suspects.
 | `chinatown-hunt.html` | participants, on phones | The game you exported. No admin tools inside it, and its content is scrambled so the page source gives away no questions or answers. |
 
 The flow is: **build in the admin file → Export → upload the exported file to a static
-HTTPS host (Netlify Drop or similar) → give participants that link.** Real GPS needs HTTPS.
+HTTPS host (yours is nanobotinc.com) → give participants that link.** Real GPS needs HTTPS.
+The file can have any name; `index.html` only makes the folder address work on its own.
+Upload updates over the same file so the link stays the same; teams keep their progress.
 
 ---
 
@@ -87,6 +90,16 @@ To carry your work across: on the PC click **Export game file**, copy that
 Keep your latest export as your backup; it is also what recovers your work if browser data
 is ever cleared.
 
+- The draft is saved per address: always open the admin file at
+  `http://localhost:8765/dist/chinatown-hunt-admin.html`. A double-clicked copy or another
+  port starts from the default game (your work isn't lost, it's just under the other address).
+  If the page doesn't load, start the server: `python3 -m http.server 8765 --bind 127.0.0.1`.
+- Keep your exports **outside** the repo's `dist/` folder (e.g. Downloads): every build and
+  test run overwrites `dist/chinatown-hunt.html` with the default game. Never commit an
+  export: the repo is public and the file holds your content and map key.
+- The **field tools password** is saved only in that browser, not in the export. Note it
+  down, and type it again on the laptop before exporting from there.
+
 **Start over** in the admin panel is the only thing that discards your draft, and it asks
 first.
 
@@ -124,22 +137,56 @@ first.
   first), then one screen shows all clues and suspects. No accusation on this site.
 - 131 unit tests and 108 browser tests, run by CI on every push.
 
-**Not built yet**
-1. **Real content.** The default game is placeholders: eight made-up locations, challenges,
-   clues and suspects. Nothing else blocks entering the real ones. (A "starting location"
-   step was planned and then dropped: every location is open from the start.)
+**Live (17 September 2026)**
+- Real content is in: 9 locations, 60 challenges (49 with pictures on
+  `nanobotinc.com/chinatown/…`), 5 clues, 8 suspects, 15 m radii, field tools password set.
+- The export is uploaded at `https://nanobotinc.com/chinatown/`. Checked from here: the page
+  loads, Google accepted the key from that site (Google map, not OpenStreetMap), the page is
+  a secure context (GPS and the field tools password box work), and progress survives
+  closing and reopening the browser (Continue returns to the same challenge and clock).
+- Full play-through of the real file on an emulated phone passed: every location opens,
+  every challenge screen renders, all 49 pictures and 5 links load, the clues screen shows
+  on finishing everything, and the 100-minute reveal waits for an open location to finish.
 
-**Before going live on your server**
-- Add your website's address (e.g. `https://your-domain/*`) to the Google API key's
-  **Website restrictions** in Google Cloud. Only `http://localhost:8765/*` is there now,
-  so Google will refuse the key on the server until you do.
-- Export the game file with the key pasted in, upload it, and open it on a phone.
+**Open items**
+1. **Progress seemed lost on the organiser's phone** after closing and reopening Chrome.
+   Not reproduced: saving works on the live site. Waiting on two answers: did the start
+   screen say **Continue** or **Begin**, and what exactly was in the address bar? Likely
+   causes: the start screen shows on every open (Continue resumes), a different address
+   (`http://` vs `https://`, `www.` vs not: each keeps separate progress), or Incognito.
+2. **Server redirect (suggested, not done):** `http://nanobotinc.com/chinatown/` loads without
+   redirecting to https, where phones refuse GPS. An Apache `.htaccess` in the site root:
+   ```apache
+   RewriteEngine On
+   RewriteCond %{HTTPS} off [OR]
+   RewriteCond %{HTTP_HOST} ^www\. [NC]
+   RewriteRule ^ https://nanobotinc.com%{REQUEST_URI} [L,R=301]
+   ```
+   It affects the whole site; check with whoever runs the server.
+3. **Offered, not built:** a "welcome back" start screen saying where the team is
+   (location, challenge, time left) above Continue.
+4. **Content fixes found in the review** (edit in the admin panel, export, re-upload):
+   - Ann Siang Hill challenge 1 says to "type the number below": there's nowhere to type.
+   - East India Company challenge 5 mentions an audio clip: there's no audio on this site.
+   - Two very large pictures, Telok Ayer challenges 3 and 8 (2.9 MB and 4.4 MB). Every
+     picture downloads at Begin, about 17 MB in total; shrink these to about 300 KB.
+   - Raffles History has no arrival text.
+   - Typos: "Durgha" (Nagore Dargah 1), "kept on eye" (clue 2), "thief clothing" (clue 4);
+     the Club Street 5 picture reads "January 2920".
+   - Same picture at Telok Ayer 2 and Ann Siang Hill 3; same link at Amoy Street 7 and 8.
+     Fine if deliberate.
+5. **Geofence spacing:** Raffles History and Club Street are only 10 m apart edge to edge
+   (Nagore Dargah and Telok Ayer 12 m). A team walking to one through the other gets locked
+   into the first. Move a pin or shrink a radius if that's a likely route.
+6. **15 m radii:** a simulation says they open within seconds with GPS error up to about
+   ±15 m, and about 1 in 10 teams wait over 30 s at ±20 m. Real GPS among the towers
+   can be worse; the "I'm standing right here" button appears after 90 s within 60 m. A real
+   walk with the walk recorder (admin file on a phone) would settle it.
+7. **Untested:** the field tools panel on the real file (needs the password), a real walk on
+   site, and Download/Share of walk recordings on iOS Safari.
 
-**Untested in the real world**
-- The exported file on a real phone over HTTPS (worth one try before an event).
-- Download/Share of walk recordings on iOS Safari.
-- Whether a 25 m radius actually works among the shophouses. That is what the walk
-  recorder and the replay sweep are for.
+**Google key:** website restrictions now allow the live site (confirmed working). Keep the
+`http://localhost:8765/*` entry so the admin file keeps Google's map.
 
 ---
 
