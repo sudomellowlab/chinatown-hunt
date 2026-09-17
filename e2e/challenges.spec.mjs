@@ -173,3 +173,40 @@ test("line breaks typed by the organiser are kept on every screen", async ({ app
   expect(await lines(page.locator("#clueList li p").first())).toEqual(["Clue line one.", "Clue line two."]);
   expect(await lines(page.locator("#suspectList li span").first())).toEqual(["Blurb one.", "Blurb two."]);
 });
+
+test("an open location fills the screen; the buttons stay in reach under long text", async ({ app, page }) => {
+  const game = structuredClone(GAME);
+  const thk = game.locations.find(l => l.id === THK.id);
+  thk.tasks[0] = { id: C1.id, prompt: Array.from({ length: 30 }, (_, i) => `Line ${i + 1} of a long challenge.`).join("\n"),
+    image: "https://img.test/hunt/tall.png" };
+  await app.open({ file: "play", html: playHtml(game) });
+  await arriveAt(app);
+  await page.locator("#nextBtn").click();
+  await expect(page.locator("#sheet")).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+
+  const vp = page.viewportSize();
+  const sheet = await page.locator("#sheet").boundingBox();
+  expect(sheet).toEqual({ x: 0, y: 0, width: vp.width, height: vp.height });
+  // Nothing of the map or the map screen shows through.
+  for (const sel of ["#map", "#hud", "#strip"]) {
+    const covered = await page.locator(sel).evaluate(el => {
+      const r = el.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = Math.min(r.top + r.height / 2, innerHeight - 1);
+      return document.elementFromPoint(x, y)?.closest("#sheet") != null;
+    });
+    expect(covered, `${sel} is covered`).toBe(true);
+  }
+  // The text runs past the bottom, but Next is on screen and usable.
+  expect(await page.locator("#sheet").evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect(page.locator("#nextBtn")).toBeInViewport({ ratio: 1 });
+  await expect(page.locator("#backBtn")).toBeInViewport({ ratio: 1 });
+  await page.locator("#nextBtn").click();
+  await expect(place(page)).toHaveText("challenge 2 of 3");
+  await expect(page.locator("#prompt")).toBeInViewport();          // the next challenge starts at the top
+
+  // Back on the map once finished.
+  await page.locator("#nextBtn").click();
+  await page.locator("#finishBtn").click();
+  await expect(page.locator("#map")).toBeInViewport();
+  await expect(page.locator("#hud")).toBeInViewport();
+});

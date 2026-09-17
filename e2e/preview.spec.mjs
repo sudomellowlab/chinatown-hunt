@@ -43,6 +43,8 @@ test("the preview shows the draft as participants see it, with a fake location",
   expect(+(await pv.locator("#fixcount").textContent())).toBeGreaterThanOrEqual(3);
   await pv.locator("#nextBtn").click();
   await expect(pv.locator("#sheetplace")).toHaveText(`challenge 1 of ${THK.tasks.length}`);
+  await expect(pv.locator("#pvHint")).toHaveText("A location is open. Finish it to see the map again.");
+  await expect(pv.locator("#previewbar"), "the preview bar stays above the full-screen location").toBeInViewport();
 
   // The admin file's own progress is untouched.
   await expect(page.locator(".pin.active, .pin.reached")).toHaveCount(0);

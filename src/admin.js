@@ -1052,6 +1052,8 @@ function startPreview(){
   };
   function renderBar(){
     $("pvHint").textContent = !state.startedAt ? "Tap Begin, then click the map to set your location."
+      : state.progress.revealed ? "The clues are showing. Restart to play again."
+      : state.progress.active ? "A location is open. Finish it to see the map again."
       : fake.at ? "You're where you clicked. Click elsewhere to move." : "Click the map to set your location.";
   }
   hooks.render.push(renderBar);

@@ -72,12 +72,14 @@ body.dev #strip{top:30px;padding-top:7px}
 #override.show{display:block}
 
 /* ---------- arrival sheet ---------- */
+/* An open location takes the whole screen: no map behind it. The buttons stay pinned at the bottom. */
 #sheet{
-  position:fixed;inset:auto 0 0 0;z-index:800;overscroll-behavior:contain;
+  position:fixed;inset:0;z-index:800;overscroll-behavior:contain;
   transform:translateY(101%);transition:transform .34s cubic-bezier(.2,.7,.3,1);
-  background:var(--sheet);border-top:2px solid var(--ink);
-  padding:0 20px calc(env(safe-area-inset-bottom) + 20px);
-  max-height:78vh;overflow:auto;
+  background:var(--sheet);
+  display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top) 20px 0;
+  overflow:auto;
 }
 #sheet.up{transform:translateY(0)}
 #sheet .rule{height:9px;margin:0 -20px 18px;border-bottom:1px solid var(--ink);
@@ -273,7 +275,10 @@ input.imglink{font-family:var(--mono);font-size:12px}
 .maptype button + button{border-left:1px solid var(--linen-deep)}
 .maptype button[aria-pressed="true"]{background:var(--ink);color:var(--sheet)}
 input.plain{font-family:var(--serif);font-size:15px;padding:9px;border:1px solid var(--ink);background:var(--linen);min-height:40px}
-#sheet .navrow{display:flex;gap:10px;margin-top:6px}
+#stage{flex:1;display:flex;flex-direction:column}
+#sheet .navrow{display:flex;gap:10px;margin:auto -20px 0;padding:12px 20px calc(env(safe-area-inset-bottom) + 14px);
+  position:sticky;bottom:0;background:var(--sheet);border-top:1px solid var(--linen-deep)}
 #sheet .navrow button{margin-top:0}
 #sheet .navrow #backBtn{flex:0 0 34%}
 #sheet .navrow .primary{flex:1}
+#sheet figure.qimg img{max-height:58vh}
