@@ -1,5 +1,6 @@
 import { Engine } from "./engine.js";
 import { Play } from "./play.js";
+import { Vault } from "./vault.js";
 import { GAME } from "./game.js";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -417,6 +418,7 @@ function linked(text){
 function fill(el, ...children){ el.replaceChildren(...children.flat().filter(c => c != null && c !== false)); }
 
 function renderSheet(){
+  if (GAME.start && Play.startPending(state.progress)) return renderStartChallenge();
   const l = state.progress.active && locationById(state.progress.active);
   if (!l) { $("sheet").classList.remove("up"); return; }
   const stage = Play.stage(l, state.progress);
@@ -454,6 +456,105 @@ function renderSheet(){
     );
   }
   $("sheet").classList.add("up");
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   STARTING CHALLENGE — opens at Begin, wherever the team is. It asks for
+   the password the LoQuiz host gives out, then shows its text and
+   challenges like a location. No location opens until it's finished.
+   In an exported file its content is encrypted with that password
+   (Vault), so the page gives nothing away until the password is typed.
+   This phone keeps the password, to reopen the content after a reload.
+   ════════════════════════════════════════════════════════════════════ */
+const START_PASS_KEY = `${KEY}:startpass`;
+const startImages = [];
+const startLoaded = () => !GAME.start.sealed || Array.isArray(GAME.start.tasks);
+
+// Check a password and, in an exported file, decrypt the content with it. Throws if it doesn't fit.
+async function openStart(typed){
+  const s = GAME.start, password = Play.normalizePassword(typed);
+  if (s.sealed) {
+    if (!startLoaded()) Object.assign(s, JSON.parse(await Vault.open(s.sealed, password)));
+  } else if (password !== Play.normalizePassword(s.password)) throw new Error("wrong password");
+  try { store.setItem(START_PASS_KEY, password); } catch(e){}
+  // Its pictures were sealed away at Begin, so fetch them now.
+  for (const url of Play.imageUrls({ start: s, locations: [] })) startImages.push(Object.assign(new Image(), { src: url }));
+}
+// After a reload part-way through: reopen the content with the password this phone kept.
+async function restoreStart(){
+  if (!GAME.start || state.progress.start !== "open" || startLoaded()) return;
+  let password = "";
+  try { password = store.getItem(START_PASS_KEY) || ""; } catch(e){}
+  try { await openStart(password); }
+  catch(e){ state.progress = { ...state.progress, start: "locked" }; save(); }   // e.g. a re-upload with a new password
+  renderSheet();
+}
+
+function renderStartChallenge(){
+  const s = GAME.start, body = $("stage");
+  $("sheetname").textContent = s.name;
+  if (state.progress.start === "locked") {
+    $("sheetplace").textContent = "starting challenge";
+    const input = h("input", { id:"startPass", type:"text", autocomplete:"off", autocapitalize:"none", autocorrect:"off",
+      spellcheck:"false", enterkeyhint:"go", "aria-label":"Password" });
+    const msg = h("p", { id:"startPassMsg", class:"hint", role:"status" });
+    const btn = h("button", { id:"startUnlock", class:"primary" }, "Unlock");
+    const unlock = async () => {
+      if (!input.value.trim()) { msg.textContent = "Type the password first."; input.focus(); return; }
+      btn.disabled = input.disabled = true; msg.textContent = "Checking…";
+      try {
+        await openStart(input.value);
+        state.progress = Play.unlockStart(state.progress);
+        save(); renderSheet(); render(); $("sheet").scrollTop = 0;
+      } catch(e){
+        btn.disabled = input.disabled = false;
+        msg.textContent = "That isn't the password. Check it with your LoQuiz host and try again.";
+        input.select();
+      }
+    };
+    btn.addEventListener("click", unlock);
+    input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); unlock(); } });
+    fill(body,
+      h("p", { id:"sheettext" }, linked(String(s.lockText ?? "").trim() || Play.START_LOCK_TEXT)),
+      h("label", { class:"passlabel", for:"startPass" }, "Password"),
+      input, msg,
+      h("div", { class:"navrow" }, btn),
+    );
+  } else if (!startLoaded()) {
+    $("sheetplace").textContent = "starting challenge";
+    fill(body, h("p", { class:"small" }, "Opening…"));
+  } else {
+    const l = Play.startAsLocation(s), stage = Play.stage(l, state.progress);
+    const move = fn => { state.progress = fn(state.progress, l); save(); renderSheet(); $("sheet").scrollTop = 0; };
+    const finish = h("button", { id:"finishBtn", class:"primary", onclick: finishStart }, "Finish and go to the map");
+    if (stage.kind === "arrival") {
+      const n = stage.total;
+      $("sheetplace").textContent = "starting challenge";
+      fill(body,
+        s.arrivalText ? h("p", { id:"sheettext" }, linked(s.arrivalText)) : null,
+        n ? h("p", { class:"small" }, `${n} challenge${n === 1 ? "" : "s"} to start. Answer ${n === 1 ? "it" : "them"} in LoQuiz, then go to the map.`) : null,
+        h("div", { class:"navrow" }, n ? h("button", { id:"nextBtn", class:"primary", onclick: () => move(Play.next) }, "Start the challenges") : finish),
+      );
+    } else {
+      const { task, index, total, last } = stage;
+      $("sheetplace").textContent = `starting challenge ${index + 1} of ${total}`;
+      fill(body,
+        picture(task.image, "qimg", "Picture for this challenge"),
+        task.prompt ? h("p", { id:"prompt", class:"prompt" }, linked(task.prompt)) : null,
+        h("div", { class:"navrow" },
+          h("button", { id:"backBtn", class:"secondary", onclick: () => move(Play.back) }, "Back"),
+          last ? finish : h("button", { id:"nextBtn", class:"primary", onclick: () => move(Play.next) }, "Next")),
+      );
+    }
+  }
+  $("sheet").classList.add("up");
+}
+function finishStart(){
+  const next = Play.finishStart(state.progress, GAME.start);
+  if (next === state.progress) return;
+  state.progress = next;
+  save(); renderSheet(); render();
+  checkReveal();
 }
 
 function finishActive(){
@@ -546,7 +647,11 @@ function showStart(){
 }
 function hideStart(){ $("start").hidden = true; }
 $("startBtn").onclick = () => {
-  if (!state.startedAt) { state.startedAt = Date.now(); save(); renderClock(); }
+  if (!state.startedAt) {
+    state.startedAt = Date.now();
+    state.progress = Play.begin(GAME, state.progress);     // a starting challenge opens now
+    save(); renderClock(); renderSheet();
+  }
   hideStart();
   preloadImages();
   checkReveal();
@@ -571,10 +676,11 @@ wake();
 document.title = GAME.title;
 render();
 renderSheet();          // a reload mid-location goes straight back to it
+restoreStart();
 renderReveal();
 showStart();
 
 export { BUILD, KEY, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing, styleLocation,
   mapStatus, setMapSource, rebuildLocations,
-  $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, finishActive, locationById,
+  $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, finishActive, finishStart, locationById,
   msLeft, startReal, stopReal, showStart, hideStart, h };

@@ -133,6 +133,29 @@ body.preview #sheet{padding-top:62px}
   </div>
 
   <div class="grp">
+    <h4>Starting challenge</h4>
+    <div class="note">Optional. Opens as soon as a team taps Begin, wherever they are. It asks first for a password that your LoQuiz host gives out, then shows its challenges. No location opens until the team has finished it.</div>
+    <div class="row" id="startOff"><button class="btn" id="startAdd">Add a starting challenge</button></div>
+    <div id="startFields" hidden>
+      <label class="stack">Heading <input type="text" id="startName" class="plain" autocomplete="off"></label>
+      <label class="stack">Password screen text <span class="note inline">shown above the password box; leave empty for the wording shown here</span>
+        <textarea id="startLockEdit" class="prose" rows="2"></textarea></label>
+      <label class="stack">Password <span class="note inline">given out on LoQuiz; capitals and extra spaces don't matter</span>
+        <input type="text" id="startPassEdit" class="imglink" autocomplete="off" spellcheck="false"></label>
+      <label class="stack">Text <span class="note inline">optional, shown after the password, before the challenges</span>
+        <textarea id="startTextEdit" class="prose" rows="3"></textarea></label>
+      <h5>Challenges <span class="note inline" id="startTaskCount"></span></h5>
+      <ol id="startTaskEdit" class="tasklist"></ol>
+      <div class="row"><button class="btn" id="startTaskAdd">Add challenge</button></div>
+      <div class="note" id="startInfo"></div>
+      <div class="row">
+        <button class="btn" id="startTry">Try it here</button>
+        <button class="btn warn" id="startRemove">Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="grp">
     <h4>Map</h4>
     <label class="stack">Google Maps key <span class="note inline">Map Tiles API, from Google Cloud</span>
       <input type="text" id="mapKey" class="imglink" autocomplete="off" spellcheck="false" placeholder="Paste your API key"></label>

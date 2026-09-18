@@ -284,3 +284,111 @@ describe("validation", () => {
     assert.match(Play.newId("c", []), /^c-[0-9a-z]{8}$/);
   });
 });
+
+describe("the starting challenge", () => {
+  const s1 = { id: "s-1", prompt: "Warm-up" }, s2 = { id: "s-2", prompt: "Second warm-up", image: "https://a.sg/s.jpg" };
+  const start = { name: "Before you set off", arrivalText: "Welcome.", tasks: [s1, s2], password: "Red Lantern" };
+  const withStart = { ...game, start };
+  const begun = () => Play.begin(withStart, Play.emptyProgress());
+  const unlocked = () => Play.unlockStart(begun());
+  const S = Play.startAsLocation(start);
+
+  test("Begin locks it; a game without one begins straight onto the map", () => {
+    assert.equal(begun().start, "locked");
+    assert.deepEqual(Play.begin(game, Play.emptyProgress()), Play.emptyProgress());
+  });
+
+  test("Begin again (Continue) never re-locks it, whatever state it's in", () => {
+    for (const state of ["open", "done"]) {
+      const p = { ...Play.emptyProgress(), start: state };
+      assert.equal(Play.begin(withStart, p), p);
+    }
+  });
+
+  test("no location can open while it is locked or open, and none can be activated", () => {
+    for (const p of [begun(), unlocked()]) {
+      assert.ok(Play.startPending(p));
+      assert.deepEqual(Play.openable(withStart.locations, p), []);
+      assert.equal(Play.activate(p, "thk"), p);
+    }
+  });
+
+  test("the password opens it, and only from locked", () => {
+    assert.equal(unlocked().start, "open");
+    const done = { ...Play.emptyProgress(), start: "done" };
+    assert.equal(Play.unlockStart(done), done);
+    assert.equal(Play.unlockStart(Play.emptyProgress()).start, undefined);
+  });
+
+  test("it steps like a location: text, then each challenge; Finish only on the last", () => {
+    let p = unlocked();
+    assert.deepEqual(Play.stage(S, p), { kind: "arrival", total: 2 });
+    assert.equal(Play.canFinishStart(start, p), false);
+    p = Play.next(p, S);
+    assert.equal(Play.stage(S, p).task, s1);
+    assert.equal(Play.canFinishStart(start, p), false);
+    assert.equal(Play.finishStart(p, start), p);
+    p = Play.next(p, S);
+    assert.equal(Play.stage(S, p).last, true);
+    p = Play.finishStart(p, start);
+    assert.equal(p.start, "done");
+    assert.equal(Play.startPending(p), false);
+    assert.deepEqual(Play.openable(withStart.locations, p).map(l => l.id), ["thk", "amoy", "green"]);
+    assert.deepEqual(p.completed, [], "the starting challenge doesn't count as a location");
+  });
+
+  test("it can't be finished while still locked", () => {
+    const p = Play.goTo(begun(), S, 1);
+    assert.equal(Play.canFinishStart(start, p), false);
+    assert.equal(Play.finishStart(p, start), p);
+  });
+
+  test("the clues wait for it like a location in progress", () => {
+    const p = unlocked();
+    assert.equal(Play.phase(withStart, p, 20 * MIN), "closing");
+    assert.equal(Play.reveal(withStart, p, 20 * MIN), p);
+    const done = Play.finishStart(Play.goTo(p, S, 1), start);
+    assert.equal(Play.phase(withStart, done, 20 * MIN), "reveal");
+  });
+
+  test("passwords ignore case and extra spaces", () => {
+    assert.equal(Play.normalizePassword("  Red   LANTERN "), "red lantern");
+    assert.equal(Play.normalizePassword(null), "");
+  });
+
+  test("reconcile keeps its state and place, and releases teams if it's removed", () => {
+    const p = Play.goTo(unlocked(), S, 1);
+    const kept = Play.reconcile(p, withStart);
+    assert.equal(kept.start, "open");
+    assert.equal(kept.at[Play.START], 1);
+    const gone = Play.reconcile(p, game);
+    assert.equal(gone.start, undefined);
+    assert.equal(gone.at[Play.START], undefined);
+    assert.equal(Play.reconcile({ ...p, start: "bogus" }, withStart).start, undefined);
+    const odd = Play.reconcile({ active: Play.START, completed: [Play.START, "thk"] }, withStart);
+    assert.equal(odd.active, null);
+    assert.deepEqual(odd.completed, ["thk"]);
+  });
+
+  test("validation: heading, password, at least one challenge, each challenge valid", () => {
+    assert.deepEqual(Play.validateGame(withStart), []);
+    assert.deepEqual(Play.validateGame({ ...game, start: { name: " ", password: " ab ", lockText: "[w](v)", arrivalText: "[x](y)", tasks: [] } }), [
+      "Starting challenge: give it a heading",
+      "Starting challenge: set a password of at least 4 characters",
+      "Starting challenge: add at least one challenge",
+      'Starting challenge: password screen text: the link on "w" isn\'t a web address',
+      'Starting challenge: text: the link on "x" isn\'t a web address',
+    ]);
+    assert.deepEqual(Play.validateGame({ ...withStart, start: { ...start, tasks: [{ id: "t1", prompt: "" }] } }), [
+      "Starting challenge, challenge 1: add some text or a picture",
+      "Thian Hock Keng, challenge 1: duplicate id t1",
+    ]);
+  });
+
+  test("its pictures are preloaded first, and new challenge ids avoid its ids", () => {
+    assert.equal(Play.imageUrls(withStart)[0], "https://a.sg/s.jpg");
+    const seq = [0, 0.5];
+    const id = Play.newTaskId({ start: { tasks: [{ id: "t-00000000" }] }, locations: [] }, () => seq.shift());
+    assert.notEqual(id, "t-00000000");
+  });
+});

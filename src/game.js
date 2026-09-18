@@ -32,6 +32,10 @@ const GAME = {
   // without one, OpenStreetMap, which is fine for testing but not allowed for paid events.
   // Never put a real key here: the repository is public. Admins paste it into the admin panel.
   map: { googleKey: "" },
+  // Optional starting challenge, opened at Begin before any location: { name, arrivalText, tasks, password }.
+  // Teams get the password from the LoQuiz host. An exported file carries it as { name, sealed }:
+  // the rest encrypted with the password. null: the game begins straight onto the map.
+  start: null,
   locations: [
     { id:"telok-ayer-green", name:"Telok Ayer Green", lat:1.28035, lng:103.84705, radius:25,
       arrivalText:"You are standing on what was once the shoreline. Telok Ayer means 'water bay' — every step east of here was sea until the reclamation of the 1880s.",

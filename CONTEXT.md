@@ -123,6 +123,12 @@ first.
 - Challenges: text and an optional picture each, shown one at a time with Back and Next and
   Finish location on the last; the admin editor to add, edit, reorder and delete them.
   Nothing is answered on this site.
+- Starting challenge (optional, 18 September 2026): opens as soon as a team taps Begin, with no
+  location needed. It asks first for a password the LoQuiz host gives out (capitals and extra
+  spaces don't matter) under wording you can change, then shows its text and challenges; no location opens until it's
+  finished. Set up under **Starting challenge** in the admin panel, with **Try it here**. In the
+  exported file its content is encrypted with the password, so the file gives away neither.
+  Importing a game file with one asks for that password.
 - Google Maps: paste a Google Maps Platform key (Map Tiles API) under **Map** in the admin
   panel and the map becomes Google's, with a Map/Satellite switch. Confirmed working with the real
   key on localhost on 16 September 2026. Without a key, or if

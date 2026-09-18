@@ -290,6 +290,12 @@ input.plain{font-family:var(--serif);font-size:15px;padding:9px;border:1px solid
 #sheet .navrow #backBtn{flex:0 0 34%}
 #sheet .navrow .primary{flex:1}
 #sheet figure.qimg img{max-height:58vh}
+/* starting challenge: the password from the LoQuiz host */
+#sheet .passlabel{display:block;font-size:13px;color:var(--slate);margin:4px 0 6px}
+#startPass{flex:0 0 auto;width:100%;font-family:var(--serif);font-size:20px;padding:12px;border:1px solid var(--ink);min-height:52px;background:#fff;color:var(--ink);letter-spacing:.04em}
+#startPass:disabled{opacity:.6}
+#sheet #startPassMsg{margin-top:12px}
+#sheet #startPassMsg:empty{display:none}
 
 /* Links in the organiser's text: clearly tappable, marked as opening elsewhere. */
 a.textlink{color:var(--jade);font-weight:600;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px}

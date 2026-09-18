@@ -10,14 +10,20 @@
    - A location shows its arrival text, then its challenges one at a time
      in order. Teams can go Back and Next; the last challenge has Finish.
    - Once a location opens, no other location can open until it's finished.
+   - An optional starting challenge (`game.start`) opens at Begin, with no
+     location needed. It asks first for a password, which the LoQuiz host
+     gives out; then its text and challenges show like a location's. Until
+     it's finished, no location can open.
    - Reveal: from `revealMinutes` before the end of the team's own clock,
      or once every location is finished, no new location can open. A team
      part-way through a location finishes it; then the clues & suspects
      screen shows, and stays.
 
    Progress shape (persisted by the game):
-     { active: locId|null, completed: [locId], at: { locId: index }, revealed: bool }
+     { active: locId|null, completed: [locId], at: { locId: index }, revealed: bool, start?: "locked"|"open"|"done" }
    `at` is the challenge a team is looking at; no entry means the arrival text.
+   The starting challenge keeps its place in `at` under Play.START. `start` is
+   absent for a game without one, and for a team that began before it was added.
 
    Challenges, clues and suspects may carry `image`: an https link to a
    picture on the organiser's server. Images are never embedded.
@@ -27,6 +33,34 @@ const Play = {
   DEFAULT_REVEAL_MINUTES: 20,
 
   emptyProgress(){ return { active:null, completed:[], at:{}, revealed:false }; },
+
+  /* ── the starting challenge ──
+     game.start: { name, lockText, arrivalText, tasks, password } in the admin file; in an exported
+     file { name, lockText, sealed }, the rest encrypted with the password (see admin.js).
+     lockText is what the password screen says; empty means START_LOCK_TEXT. */
+  START: "start",
+  START_PASSWORD_MIN: 4,
+  // Shown above the password box when the organiser hasn't written their own.
+  START_LOCK_TEXT: "Your LoQuiz host will give you a password. Type it here to see your first challenge.",
+  // The starting challenge as a location for stage/next/back/goTo: its place is kept in at[START].
+  startAsLocation(start){ return { id: Play.START, name: start.name, arrivalText: start.arrivalText, tasks: start.tasks || [] }; },
+  // Passwords are said aloud and typed on phones: ignore case and extra spaces.
+  normalizePassword(text){ return String(text ?? "").trim().replace(/\s+/g, " ").toLowerCase(); },
+  // At Begin: a game with a starting challenge locks it until the password is given.
+  begin(game, progress){
+    return game.start && !progress.start ? { ...progress, start: "locked" } : progress;
+  },
+  // Until the starting challenge is finished, no location can open.
+  startPending(progress){ return progress.start === "locked" || progress.start === "open"; },
+  unlockStart(progress){ return progress.start === "locked" ? { ...progress, start: "open" } : progress; },
+  canFinishStart(start, progress){
+    if (progress.start !== "open") return false;
+    const s = Play.stage(Play.startAsLocation(start), progress);
+    return s.kind === "task" ? s.last : s.total === 0;
+  },
+  finishStart(progress, start){
+    return Play.canFinishStart(start, progress) ? { ...progress, start: "done" } : progress;
+  },
 
   /* What the team should see at a location:
        arrival – the arrival text (before the first challenge, or after going Back from it)
@@ -42,7 +76,7 @@ const Play = {
   /* ── transitions: each returns a new progress object ── */
 
   activate(progress, locId){
-    if (progress.active || progress.revealed || progress.completed.includes(locId)) return progress;
+    if (progress.active || progress.revealed || Play.startPending(progress) || progress.completed.includes(locId)) return progress;
     return { ...progress, active: locId };
   },
   // Move to challenge `index`, or back to the arrival text with -1.
@@ -85,12 +119,12 @@ const Play = {
   },
   /* Where the game is:
        play     – locations can open
-       closing  – reveal is due, but the team is finishing its current location
+       closing  – reveal is due, but the team is finishing its current location (or the starting challenge)
        reveal   – the clues & suspects screen */
   phase(game, progress, msLeft){
     if (progress.revealed) return "reveal";
     if (!Play.revealDue(game, progress, msLeft)) return "play";
-    return progress.active ? "closing" : "reveal";
+    return progress.active || Play.startPending(progress) ? "closing" : "reveal";
   },
   // Mark the reveal as shown, once it's due and no location is in progress. It then stays.
   reveal(game, progress, msLeft){
@@ -99,20 +133,23 @@ const Play = {
   },
 
   // Locations the geofence may open right now: only the active one while a location is in
-  // progress, and none once the reveal is due.
+  // progress, and none during the starting challenge or once the reveal is due.
   openable(locations, progress, revealDue = false){
     if (progress.active) return locations.filter(l => l.id === progress.active);
-    if (revealDue || progress.revealed) return [];
+    if (revealDue || progress.revealed || Play.startPending(progress)) return [];
     return locations.filter(l => !progress.completed.includes(l.id));
   },
 
   // Bring stored progress into line with the game as it is now (a re-uploaded version, say).
   reconcile(progress, game){
-    const { active, completed, at, revealed } = { ...Play.emptyProgress(), ...progress };
+    const { active, completed, at, revealed, start } = { ...Play.emptyProgress(), ...progress };
     const p = { active, completed, at, revealed };
+    // A game re-uploaded without its starting challenge lets teams waiting on it carry on.
+    if (game.start && ["locked", "open", "done"].includes(start)) p.start = start;
     const ids = new Set(game.locations.map(l => l.id));
-    p.completed = (Array.isArray(p.completed) ? p.completed : []).filter(id => ids.has(id));
-    if (!ids.has(p.active) || p.completed.includes(p.active)) p.active = null;
+    if (game.start) ids.add(Play.START);
+    p.completed = (Array.isArray(p.completed) ? p.completed : []).filter(id => ids.has(id) && id !== Play.START);
+    if (!ids.has(p.active) || p.active === Play.START || p.completed.includes(p.active)) p.active = null;
     const kept = {};
     for (const [id, i] of Object.entries(p.at && typeof p.at === "object" ? p.at : {}))
       if (ids.has(id) && Number.isInteger(i) && i >= 0) kept[id] = i;
@@ -137,6 +174,7 @@ const Play = {
   // Every image link in the game, once each, in the order they appear.
   imageUrls(game){
     const urls = [
+      ...(game.start?.tasks || []).map(t => t.image),
       ...game.locations.flatMap(l => (l.tasks || []).map(t => t.image)),
       ...(game.clues || []).map(c => c.image),
       ...(game.suspects || []).map(s => s.image),
@@ -190,6 +228,21 @@ const Play = {
     if (!String(game.title ?? "").trim()) lines.push("Game: the title is empty");
     for (const p of Play.linkProblems(game.intro)) lines.push(`Game: start screen text: ${p}`);
     for (const p of Play.linkProblems(game.revealIntro)) lines.push(`Clues: introduction: ${p}`);
+    if (game.start) {
+      const s = game.start, where = "Starting challenge";
+      if (!String(s.name ?? "").trim()) lines.push(`${where}: give it a heading`);
+      if (Play.normalizePassword(s.password).length < Play.START_PASSWORD_MIN)
+        lines.push(`${where}: set a password of at least ${Play.START_PASSWORD_MIN} characters`);
+      if (!(s.tasks || []).length) lines.push(`${where}: add at least one challenge`);
+      for (const p of Play.linkProblems(s.lockText)) lines.push(`${where}: password screen text: ${p}`);
+      for (const p of Play.linkProblems(s.arrivalText)) lines.push(`${where}: text: ${p}`);
+      (s.tasks || []).forEach((t, i) => {
+        if (!t.id) lines.push(`${where}, challenge ${i + 1}: missing id`);
+        else if (seen.has(t.id)) lines.push(`${where}, challenge ${i + 1}: duplicate id ${t.id}`);
+        seen.add(t.id);
+        for (const p of Play.validateTask(t)) lines.push(`${where}, challenge ${i + 1}: ${p}`);
+      });
+    }
     if (!game.locations.length) lines.push("Locations: add at least one location");
     game.locations.forEach((l, i) => {
       const where = `Location ${i + 1}${String(l.name ?? "").trim() ? ` (${l.name})` : ""}`;
@@ -242,7 +295,7 @@ const Play = {
     return Play.newId("l", game.locations.map(l => l.id), random);
   },
   newTaskId(game, random = Math.random){
-    return Play.newId("t", game.locations.flatMap(l => (l.tasks || []).map(t => t.id)), random);
+    return Play.newId("t", [...(game.start?.tasks || []), ...game.locations.flatMap(l => l.tasks || [])].map(t => t.id), random);
   },
 };
 

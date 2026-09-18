@@ -17,6 +17,10 @@ import { BUILD, KEY, store, state, save, feed, hooks, ui, map, pins, rings, onFi
    ════════════════════════════════════════════════════════════════════ */
 const ADMIN_KEY = "chinatown-hunt-m1";          // where earlier versions kept edits and recordings; kept so they survive
 
+// Progress as saved, before anything here saves over it. The game read it against the default game,
+// which has no starting challenge; it is read again once the draft is applied (see THE DRAFT).
+const savedProgress = (() => { try { return JSON.parse(store.getItem(KEY))?.progress || null; } catch(e){ return null; } })();
+
 // Preview: the same file opened with ?preview shows the game as participants see it (see PREVIEW below).
 const PREVIEW = BUILD === "preview";
 if (!PREVIEW) { ui.startScreen = false; hideStart(); }
@@ -56,6 +60,9 @@ function applyContent(game){
   for (const k of ["durationMinutes", "revealMinutes"]) if (Number.isFinite(game[k])) GAME[k] = game[k];
   for (const k of ["clues", "suspects"]) if (Array.isArray(game[k])) GAME[k] = structuredClone(game[k]);
   if (game.map && typeof game.map === "object") GAME.map = { ...GAME.map, ...game.map };
+  if ("start" in game) GAME.start = game.start ? {
+    name: game.start.name ?? "", lockText: game.start.lockText ?? "", arrivalText: game.start.arrivalText ?? "", password: game.start.password ?? "", tasks: structuredClone(game.start.tasks || []),
+  } : null;
   state.clockMinutes = GAME.durationMinutes;
   fitToLocations();
 }
@@ -78,6 +85,9 @@ function saveDraft(){
     const r = Poi.apply(DEFAULT_GAME.locations, old);
     if (r.applied.length) { applyContent({ ...DEFAULT_GAME, locations: r.locations }); queueMicrotask(saveDraft); }
   }
+  // Bring the saved progress in line with the draft, or a starting challenge in progress would be
+  // forgotten on every reload. The clues screen stays cleared as above.
+  if (savedProgress) { state.progress = Play.reconcile({ ...savedProgress, revealed: state.progress.revealed }, GAME); save(); }
 }
 
 /* Walk recording: every fix the engine sees, kept apart from game progress so that
@@ -543,21 +553,32 @@ const FIELD_PACK_SLOT = '"__FIELD_PACK__"';
 const canExport = PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).length === 2 && PARTICIPANT_TEMPLATE.split(FIELD_PACK_SLOT).length === 2
   && FIELD_TOOLS.includes("function fieldTools");
 
+// Challenges are text and a picture only; drop answer fields left over from earlier drafts.
+const cleanTask = t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { image: t.image } : {}) });
 // The game exactly as it should reach participants: current locations and radii, default engine settings.
+// This is also the draft, so the starting challenge's password is still readable here; Export seals it.
 function gameForExport(){
   const game = structuredClone(GAME);
   game.locations = GAME.locations.map(l => {
     const out = { ...l };
     if (out.radius == null) delete out.radius;
-    // Challenges are text and a picture only; drop answer fields left over from earlier drafts.
-    out.tasks = (l.tasks || []).map(t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { image: t.image } : {}) }));
+    out.tasks = (l.tasks || []).map(cleanTask);
     return out;
   });
+  const s = GAME.start;
+  game.start = s ? { name: s.name ?? "", lockText: s.lockText ?? "", arrivalText: s.arrivalText ?? "", password: s.password ?? "", tasks: (s.tasks || []).map(cleanTask) } : null;
   return game;
+}
+// The starting challenge as it goes into the exported file: its heading and password screen text (shown
+// before the password), and the rest encrypted with its password, so the file shows neither the password
+// nor the challenges until a team types it.
+async function sealStart({ name, lockText, password, ...content }){
+  return { name, lockText, sealed: await Vault.seal(JSON.stringify(content), Play.normalizePassword(password)) };
 }
 async function participantHtml(game = gameForExport()){
   const password = fieldPassword();
   const tools = password ? JSON.stringify(await Vault.seal(FIELD_TOOLS, password)) : "null";
+  if (game.start) game = { ...game, start: await sealStart(game.start) };
   return PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).join(JSON.stringify(Pack.seal(game))).split(FIELD_PACK_SLOT).join(tools);
 }
 
@@ -593,7 +614,8 @@ function renderExport(){
     ? "Export works in the built admin file (dist/chinatown-hunt-admin.html). Run node build.js."
     : problems.length
       ? `Fix ${problems.length === 1 ? "this" : "these"} before exporting:\n${problems.map(p => "• " + p).join("\n")}`
-      : `${game.locations.length} locations${moved ? `, ${moved} moved from the default` : ""} · ${challenges} challenges. ` +
+      : `${game.locations.length} locations${moved ? `, ${moved} moved from the default` : ""} · ${challenges} challenges` +
+        `${game.start ? ` · a starting challenge, locked with its password` : ""}. ` +
         `The file has no admin tools and its content is scrambled. Upload it to your host; participants open the plain link.` +
         (fieldPassword() ? "" : "\nNo field tools password, so the file has no field tools.");
   $("fieldInfo").textContent = fieldPassword()
@@ -605,6 +627,7 @@ function renderExport(){
   $("exportGame").disabled = !canExport || problems.length > 0;
   if (canExport && !problems.length && mapStatus.kind !== "google")
     $("exportInfo").textContent += "\nNote: this file will show OpenStreetMap, not Google Maps. Add a working Google Maps key under Map first.";
+  renderStartInfo(game);
 }
 $("exportGame").onclick = async () => {
   if (exportProblems().length) return;
@@ -628,6 +651,13 @@ $("importGame").onchange = async e => {
     if (game.id !== GAME.id || !Array.isArray(game.locations)) throw new Error("it is a different game");
   } catch(err){ alert(`Couldn't import ${file.name}: ${err.message}.`); return; }
   if (!confirm(`Replace the game you're building here with the one in ${file.name}?`)) return;
+  // Its starting challenge is locked with its password: that password brings it back.
+  if (game.start?.sealed) {
+    const typed = prompt(`${file.name} has a starting challenge, locked with its password. Type that password to import it:`);
+    if (typed == null) return;
+    try { game.start = { name: game.start.name ?? "", lockText: game.start.lockText ?? "", password: typed.trim(), ...JSON.parse(await Vault.open(game.start.sealed, Play.normalizePassword(typed))) }; }
+    catch(err){ alert("That isn't the starting challenge's password, so nothing was imported."); return; }
+  }
   try { store.setItem(DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), game })); }
   catch(err){ alert("Couldn't save the imported game in this browser (storage full?)."); return; }
   location.reload();
@@ -767,7 +797,7 @@ function linkTool(box){
   row.append(btn, hint);
   return row;
 }
-for (const id of ["tfPrompt", "arrivalEdit", "introEdit", "revealIntroEdit"]) {
+for (const id of ["tfPrompt", "arrivalEdit", "introEdit", "revealIntroEdit", "startLockEdit", "startTextEdit"]) {
   const box = $(id), host = box.closest("label") || box;
   host.after(linkTool(box));
 }
@@ -818,7 +848,7 @@ function field(tag, value, placeholder, set){
   return el;
 }
 // A list of rows, each with its fields, ↑ ↓ and Delete. Rebuilt on add, move and delete only.
-function editableList(listId, countId, items, noun, fields){
+function editableList(listId, countId, items, noun, fields, rerender = renderMystery){
   $(countId).textContent = items.length ? `${items.length}, shown in this order` : "none yet";
   const list = $(listId);
   if (list.dataset.n === String(items.length) && list.dataset.ids === items.map(x => x.id).join()) return;   // keep focus while typing
@@ -831,12 +861,12 @@ function editableList(listId, countId, items, noun, fields){
     btns.innerHTML = `<button class="btn tup" title="Move up">↑</button><button class="btn tdown" title="Move down">↓</button><button class="btn warn tdel">Delete</button>`;
     btns.querySelector(".tup").disabled = i === 0;
     btns.querySelector(".tdown").disabled = i === items.length - 1;
-    const move = dir => { [items[i], items[i + dir]] = [items[i + dir], items[i]]; saveDraft(); renderMystery(); };
+    const move = dir => { [items[i], items[i + dir]] = [items[i + dir], items[i]]; saveDraft(); rerender(); };
     btns.querySelector(".tup").onclick = () => move(-1);
     btns.querySelector(".tdown").onclick = () => move(+1);
     btns.querySelector(".tdel").onclick = () => {
       if (!confirm(`Delete ${noun} ${i + 1}?`)) return;
-      items.splice(i, 1); saveDraft(); renderMystery();
+      items.splice(i, 1); saveDraft(); rerender();
     };
     li.append(...fields(item), btns);
     return li;
@@ -870,6 +900,70 @@ previewClose.textContent = "Close preview (admin)";
 $("reveal").querySelector(".revealcard").prepend(previewClose);
 $("previewReveal").onclick = () => { ui.revealPreview = true; renderReveal(); previewClose.hidden = false; makeRoomForMap(); };
 previewClose.onclick = () => { ui.revealPreview = false; previewClose.hidden = true; renderReveal(); };
+
+/* ════════════════════════════════════════════════════════════════════
+   STARTING CHALLENGE — optional. Opens at Begin, wherever the team is,
+   and asks for the password the LoQuiz host gives out; then its text and
+   challenges, like a location. Every field saves as you type, as the clues
+   do. Try it here opens it in this file, as a team would see it at Begin.
+   ════════════════════════════════════════════════════════════════════ */
+const START_FIELDS = [["startName", "name"], ["startLockEdit", "lockText"], ["startPassEdit", "password"], ["startTextEdit", "arrivalText"]];
+$("startLockEdit").placeholder = Play.START_LOCK_TEXT;
+function renderStartEditor(){
+  const s = GAME.start;
+  $("startOff").hidden = !!s; $("startFields").hidden = !s;
+  if (!s) return;
+  for (const [id, key] of START_FIELDS)
+    if (document.activeElement !== $(id)) $(id).value = s[key] ?? "";
+  editableList("startTaskEdit", "startTaskCount", s.tasks, "challenge", t => [
+    ...withLinkTool(field("textarea", t.prompt ?? "", "What teams read; they answer in LoQuiz", v => { t.prompt = v; })),
+    ...imageField(t),
+  ], renderStartEditor);
+  renderStartInfo();
+}
+function renderStartInfo(game = gameForExport()){
+  if (!GAME.start) return;
+  const problems = Play.validateGame(game).filter(p => p.startsWith("Starting challenge"));
+  const info = $("startInfo");
+  info.textContent = problems.length ? problems.map(p => "• " + p).join("\n")
+    : `Teams type "${Play.normalizePassword(GAME.start.password)}" (in any capitals) to open it.`;
+  info.classList.toggle("bad", problems.length > 0);
+}
+for (const [id, key] of START_FIELDS) {
+  $(id).addEventListener("input", e => {
+    if (!GAME.start) return;
+    GAME.start[key] = e.target.value;
+    saveDraft();
+    // Trying it here: show the change, except while the password is being typed on the locked screen.
+    if (state.progress.start === "open" || (state.progress.start === "locked" && key !== "password")) renderSheet();
+  });
+}
+$("startAdd").onclick = () => {
+  GAME.start = { name: "Before you set off", arrivalText: "", password: "", tasks: [{ id: Play.newTaskId(GAME), prompt: "" }] };
+  saveDraft(); renderStartEditor();
+  $("startPassEdit").focus();
+};
+$("startTaskAdd").onclick = () => {
+  if (!GAME.start) return;
+  GAME.start.tasks.push({ id: Play.newTaskId(GAME), prompt: "" });
+  saveDraft(); renderStartEditor();
+  $("startTaskEdit").querySelector("li:last-child .prose")?.focus();
+};
+$("startRemove").onclick = () => {
+  const n = GAME.start?.tasks.length || 0;
+  if (!confirm(`Remove the starting challenge${n ? ` and its ${n} challenge${n === 1 ? "" : "s"}` : ""}? Teams will begin straight onto the map. Export first if you might want it back.`)) return;
+  GAME.start = null;
+  state.progress = Play.reconcile(state.progress, GAME);
+  save(); saveDraft(); renderStartEditor(); renderSheet(); render();
+};
+$("startTry").onclick = () => {
+  if (!GAME.start) return;
+  if (state.progress.active) { alert("A location is open here. Finish it (or Reset progress) first."); return; }
+  const at = { ...state.progress.at }; delete at[Play.START];
+  state.progress = { ...state.progress, at, start: "locked" };
+  save(); renderSheet(); render();
+  makeRoomForMap();
+};
 
 /* ════════════════════════════════════════════════════════════════════
    MAP — the Google Maps key. It is saved with the draft and goes into the
@@ -1140,6 +1234,8 @@ function startPreview(){
   };
   function renderBar(){
     $("pvHint").textContent = !state.startedAt ? "Tap Begin, then click the map to set your location."
+      : state.progress.start === "locked" ? `Starting challenge: the password is "${Play.normalizePassword(GAME.start?.password)}".`
+      : state.progress.start === "open" ? "Finish the starting challenge to see the map."
       : state.progress.revealed ? "The clues are showing. Restart to play again."
       : state.progress.active ? "A location is open. Finish it to see the map again."
       : fake.at ? "You're where you clicked. Click elsewhere to move." : "Click the map to set your location.";
@@ -1156,6 +1252,6 @@ function startPreview(){
 renderSheet();
 setMapSource(); renderMap();
 document.title = `${GAME.title} · ${PREVIEW ? "Preview" : "Admin"}`;
-renderGameText(); renderPoi(); renderMystery(); renderExport(); setSrcButtons(); renderLog(); render(); checkReveal();
+renderGameText(); renderPoi(); renderMystery(); renderStartEditor(); renderExport(); setSrcButtons(); renderLog(); render(); checkReveal();
 if (PREVIEW) startPreview();
 else if (wideScreen.matches) toggleDrawer(true);      // on a computer, open with the tools showing
