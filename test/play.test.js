@@ -70,10 +70,11 @@ describe("stepping through a location", () => {
     assert.equal(Play.canFinish(shorter, p), true);
   });
 
-  test("nothing about answers, hints or points is stored", () => {
+  test("no hints or points are stored, and no answers for challenges that have none", () => {
     let p = Play.finish(Play.goTo(open(), loc, 2), loc);
-    assert.deepEqual(Object.keys(p).sort(), ["active", "at", "completed", "revealed"]);
-    assert.ok(!/answer|hint|point|correct/i.test(JSON.stringify(p)));
+    assert.deepEqual(Object.keys(p).sort(), ["active", "at", "completed", "revealed", "solved"]);
+    assert.deepEqual(p.solved, {});
+    assert.ok(!/hint|point|score/i.test(JSON.stringify(p)));
   });
 });
 
@@ -160,14 +161,14 @@ describe("the clues & suspects reveal", () => {
 describe("reconcile", () => {
   test("fills in missing fields and drops locations the game no longer has", () => {
     const p = Play.reconcile({ active: "gone", completed: ["thk", "gone"], at: { thk: 1, gone: 2, amoy: -1, green: "x" } }, game);
-    assert.deepEqual(p, { active: null, completed: ["thk"], at: { thk: 1 }, revealed: false });
+    assert.deepEqual(p, { active: null, completed: ["thk"], at: { thk: 1 }, solved: {}, revealed: false });
   });
   test("an active location that's also completed is no longer active", () => {
     assert.equal(Play.reconcile({ active: "thk", completed: ["thk"] }, game).active, null);
   });
   test("drops fields from older versions, keeps the reveal, and survives garbage", () => {
     const p = Play.reconcile({ answers: { t1: { correct: true } }, hints: {}, intro: { thk: true }, revealed: true }, game);
-    assert.deepEqual(p, { active: null, completed: [], at: {}, revealed: true });
+    assert.deepEqual(p, { active: null, completed: [], at: {}, solved: {}, revealed: true });
     assert.deepEqual(Play.reconcile({ completed: "x", at: 5, revealed: "yes" }, game), Play.emptyProgress());
   });
 });
@@ -390,5 +391,143 @@ describe("the starting challenge", () => {
     const seq = [0, 0.5];
     const id = Play.newTaskId({ start: { tasks: [{ id: "t-00000000" }] }, locations: [] }, () => seq.shift());
     assert.notEqual(id, "t-00000000");
+  });
+});
+
+describe("answers on a challenge", () => {
+  const ask = (answer, id = "q1") => ({ id, prompt: "Which fruit?", answer });
+  const text = ask({ kind: "text", accept: ["apple", "*ple*"] });
+  const number = ask({ kind: "number", accept: ["1844"] }, "q2");
+  const choice = ask({ kind: "choice", options: [
+    { id: "o1", text: "Apple" }, { id: "o2", text: "Pear", correct: true }, { id: "o3", text: "Plum", correct: true }] }, "q3");
+  const withAnswers = { id: "quiz", name: "Quiz stop", ...at, tasks: [text, number, choice] };
+  const quizGame = { ...game, locations: [withAnswers, other] };
+
+  test("a challenge without an answer behaves as before", () => {
+    assert.equal(Play.needsAnswer(t1), false);
+    assert.equal(Play.isSolved(Play.emptyProgress(), t1), true);
+    assert.equal(Play.checkAnswer(t1, "anything"), true);
+    assert.deepEqual(Play.solve(Play.emptyProgress(), t1, "x").solved, {});
+  });
+
+  test("text answers ignore capitals and extra spaces", () => {
+    for (const typed of ["apple", "APPLE", " Apple ", "  apple  "]) assert.ok(Play.checkAnswer(text, typed), typed);
+    for (const typed of ["app", "apples", "an apple", ""]) assert.equal(Play.checkAnswer(ask({ kind: "text", accept: ["apple"] }), typed), false, typed);
+  });
+
+  test("* stands for anything: *ple*, ple*, *ple and in the middle", () => {
+    const contains = ask({ kind: "text", accept: ["*ple*"] });
+    for (const typed of ["apple", "Apple", "pleasant", "a simple thing", "ple"]) assert.ok(Play.checkAnswer(contains, typed), typed);
+    for (const typed of ["pear", "pie"]) assert.equal(Play.checkAnswer(contains, typed), false, typed);
+
+    const starts = ask({ kind: "text", accept: ["ple*"] });
+    assert.ok(Play.checkAnswer(starts, "please"));
+    assert.equal(Play.checkAnswer(starts, "apple"), false);
+
+    const ends = ask({ kind: "text", accept: ["*ple"] });
+    assert.ok(Play.checkAnswer(ends, "apple"));
+    assert.equal(Play.checkAnswer(ends, "apples"), false);
+
+    const middle = ask({ kind: "text", accept: ["a*e"] });
+    assert.ok(Play.checkAnswer(middle, "apple"));
+    assert.ok(Play.checkAnswer(middle, "ae"));
+    assert.equal(Play.checkAnswer(middle, "beetle"), false);
+  });
+
+  test("the rest of a pattern is taken literally, dots and brackets included", () => {
+    const dotted = ask({ kind: "text", accept: ["st. andrew's"] });
+    assert.ok(Play.checkAnswer(dotted, "St. Andrew's"));
+    assert.equal(Play.checkAnswer(dotted, "stx andrew's"), false, "the dot is not a wildcard");
+    assert.ok(Play.checkAnswer(ask({ kind: "text", accept: ["(1819)"] }), "(1819)"));
+  });
+
+  test("any of several accepted answers is right", () => {
+    assert.ok(Play.checkAnswer(text, "apple"));
+    assert.ok(Play.checkAnswer(text, "pineapple"), "matched by the second line");
+    assert.equal(Play.checkAnswer(text, "durian"), false);
+    assert.equal(Play.checkAnswer(ask({ kind: "text", accept: ["  ", ""] }), ""), false, "blank lines accept nothing");
+  });
+
+  test("numbers ignore commas and spaces but must be the right number", () => {
+    for (const typed of ["1844", "1,844", " 1844 ", "1 844", "1844.00"]) assert.ok(Play.checkAnswer(number, typed), typed);
+    for (const typed of ["1845", "184", "", "eighteen forty-four"]) assert.equal(Play.checkAnswer(number, typed), false, typed);
+    assert.equal(Play.numberValue("12abc"), null);
+    assert.equal(Play.numberValue("-3.5"), -3.5);
+  });
+
+  test("multiple choice accepts any option marked correct, by its id", () => {
+    assert.ok(Play.checkAnswer(choice, "o2"));
+    assert.ok(Play.checkAnswer(choice, "o3"));
+    assert.equal(Play.checkAnswer(choice, "o1"), false);
+    assert.equal(Play.checkAnswer(choice, "Pear"), false, "the option's text is not the answer");
+  });
+
+  test("a right answer is recorded, a wrong one changes nothing", () => {
+    const p0 = Play.emptyProgress();
+    const p1 = Play.solve(p0, text, " APPLE ");
+    assert.equal(Play.isSolved(p1, text), true);
+    assert.equal(p1.solved.q1, "APPLE", "what the team typed, for showing back");
+    assert.equal(Play.solve(p0, text, "durian"), p0);
+    assert.equal(Play.isSolved(p0, text), false);
+    assert.equal(Play.solve(p0, choice, "o2").solved.q3, "Pear", "the option's text is shown back");
+  });
+
+  test("Next and Finish wait until the challenge is answered", () => {
+    let p = Play.next(Play.activate(Play.emptyProgress(), "quiz"), withAnswers);   // on the first challenge
+    assert.equal(Play.stage(withAnswers, p).index, 0);
+    assert.equal(Play.canAdvance(withAnswers, p), false);
+    assert.equal(Play.next(p, withAnswers), p, "Next does nothing while it's unanswered");
+    p = Play.solve(p, text, "apple");
+    assert.equal(Play.canAdvance(withAnswers, p), true);
+    p = Play.next(p, withAnswers);
+    assert.equal(Play.stage(withAnswers, p).index, 1);
+    assert.equal(Play.back(p, withAnswers).at.quiz, 0, "Back is always allowed");
+
+    p = Play.goTo(p, withAnswers, 2);                                   // the last challenge
+    assert.equal(Play.canFinish(withAnswers, p), false);
+    assert.equal(Play.finish(p, withAnswers), p);
+    p = Play.solve(p, choice, "o2");
+    assert.equal(Play.canFinish(withAnswers, p), true);
+    assert.deepEqual(Play.finish(p, withAnswers).completed, ["quiz"]);
+  });
+
+  test("the starting challenge waits for its answer too", () => {
+    const start = { name: "First", password: "opensesame", tasks: [text] };
+    const g = { ...quizGame, start };
+    let p = Play.unlockStart(Play.begin(g, Play.emptyProgress()));
+    p = Play.next(p, Play.startAsLocation(start));
+    assert.equal(Play.canFinishStart(start, p), false);
+    p = Play.solve(p, text, "apple");
+    assert.equal(Play.canFinishStart(start, p), true);
+    assert.equal(Play.finishStart(p, start).start, "done");
+  });
+
+  test("a testing shortcut can step past an unanswered challenge", () => {
+    const p = Play.markSolved(Play.emptyProgress(), text);
+    assert.equal(Play.isSolved(p, text), true);
+    assert.equal(Play.markSolved(p, t1), p, "nothing to mark when no answer is asked for");
+  });
+
+  test("answers given survive a reload, and drop with challenges the game no longer has", () => {
+    const p = Play.reconcile({ solved: { q1: "apple", gone: "x", q2: 5 } }, quizGame);
+    assert.deepEqual(p.solved, { q1: "apple" });
+    // While the starting challenge is still sealed its answers can't be checked, so they're all kept.
+    const sealed = Play.reconcile({ solved: { unknown: "kept" } }, { ...quizGame, start: { name: "s", sealed: "ctv1.x" } });
+    assert.deepEqual(sealed.solved, { unknown: "kept" });
+  });
+
+  test("an answer must be complete before the game can be exported", () => {
+    assert.deepEqual(Play.answerProblems(t1), []);
+    assert.deepEqual(Play.answerProblems(ask({ kind: "text", accept: [] })), ["write the answer teams must give"]);
+    assert.deepEqual(Play.answerProblems(ask({ kind: "text", accept: [" * "] })), ["an answer of only * would accept anything"]);
+    assert.deepEqual(Play.answerProblems(ask({ kind: "number", accept: ["about 1844"] })), ['the answer "about 1844" isn\'t a number']);
+    assert.deepEqual(Play.answerProblems(ask({ kind: "choice", options: [{ id: "o1", text: "One", correct: true }] })),
+      ["a multiple choice question needs at least two options"]);
+    assert.deepEqual(Play.answerProblems(ask({ kind: "choice", options: [{ id: "o1", text: "One" }, { id: "o2", text: " " }] })),
+      ["one of the options is empty", "mark the correct option"]);
+    assert.deepEqual(Play.answerProblems(ask({ kind: "riddle", accept: ["x"] })), ["the answer type isn't one this game knows"]);
+    assert.deepEqual(Play.validateTask(ask({ kind: "number", accept: [] })), ["write the answer teams must give"]);
+    assert.deepEqual(Play.validateGame({ ...quizGame, locations: [{ ...withAnswers, tasks: [ask({ kind: "number", accept: ["x"] })] }] })
+      .filter(l => l.includes("challenge 1")), ['Quiz stop, challenge 1: the answer "x" isn\'t a number']);
   });
 });

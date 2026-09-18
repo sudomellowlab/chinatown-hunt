@@ -335,14 +335,17 @@ $("forceOpen").onclick = () => {
   if (activateLocation(next.id)) makeRoomForMap();
 };
 // Testing shortcuts: move to the next challenge, or finish the open location outright.
+// Testing shortcuts step past a challenge that asks for an answer, without giving it.
 $("solveOne").onclick = () => {
   const l = locationById(state.progress.active); if (!l) { alert("No location is open."); return; }
+  state.progress = Play.markSolved(state.progress, Play.stage(l, state.progress).task);
   if (Play.canFinish(l, state.progress)) { finishActive(); return; }
   state.progress = Play.next(state.progress, l); save(); renderSheet();
 };
 $("solveAll").onclick = () => {
   const l = locationById(state.progress.active); if (!l) { alert("No location is open."); return; }
   state.progress = Play.goTo(state.progress, l, (l.tasks || []).length - 1);
+  state.progress = Play.markSolved(state.progress, Play.stage(l, state.progress).task);
   finishActive();
 };
 $("reset").onclick = () => {
@@ -553,8 +556,16 @@ const FIELD_PACK_SLOT = '"__FIELD_PACK__"';
 const canExport = PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).length === 2 && PARTICIPANT_TEMPLATE.split(FIELD_PACK_SLOT).length === 2
   && FIELD_TOOLS.includes("function fieldTools");
 
-// Challenges are text and a picture only; drop answer fields left over from earlier drafts.
-const cleanTask = t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { image: t.image } : {}) });
+/* A challenge is its text, an optional picture and, when the organiser set one, the answer teams
+   must give here. Anything else left over from earlier drafts (points, hints) is dropped. */
+const cleanTask = t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { image: t.image } : {}), ...(cleanAnswer(t.answer)) });
+function cleanAnswer(answer){
+  const a = Play.answerOf({ answer });
+  if (!a) return {};
+  if (a.kind === "choice")
+    return { answer: { kind: "choice", options: Play.choiceOptions(a).map(o => ({ id: o.id, text: String(o.text ?? "").trim(), ...(o.correct ? { correct: true } : {}) })) } };
+  return { answer: { kind: a.kind, accept: Play.accepted(a) } };
+}
 // The game exactly as it should reach participants: current locations and radii, default engine settings.
 // This is also the draft, so the starting challenge's password is still readable here; Export seals it.
 function gameForExport(){
@@ -677,6 +688,11 @@ let editing = null;       // { locId, index } of the challenge in the form; inde
 
 const selectedLocation = () => GAME.locations.find(l => l.id === capSel.value);
 
+// What a challenge asks for, for the lists: "text answer", "number answer", "multiple choice".
+function answerLabel(task){
+  const a = Play.answerOf(task);
+  return a ? (a.kind === "choice" ? "multiple choice" : `${a.kind} answer`) : "";
+}
 function renderTasks(){
   const l = selectedLocation(); if (!l) return;
   const arrival = $("arrivalEdit");
@@ -691,7 +707,7 @@ function renderTasks(){
     li.innerHTML = `<div class="tsum"><span class="tnum"></span><span class="tpts"></span></div><div class="tprompt"></div><div class="tprob"></div>
       <div class="tbtns"><button class="btn tup" title="Move up">↑</button><button class="btn tdown" title="Move down">↓</button><button class="btn tedit">Edit</button><button class="btn warn tdel">Delete</button></div>`;
     li.querySelector(".tnum").textContent = i + 1;
-    li.querySelector(".tpts").textContent = t.image ? "image" : "";
+    li.querySelector(".tpts").textContent = [t.image && "image", answerLabel(t)].filter(Boolean).join(" · ");
     li.querySelector(".tprompt").textContent = t.prompt || (t.image ? "(picture only)" : "(empty)");
     li.querySelector(".tprob").textContent = problems.join(" · ");
     li.querySelector(".tup").disabled = i === 0;
@@ -725,14 +741,80 @@ function deleteTask(l, i){
   saveDraft(); renderTasks();
 }
 
+/* ── the answer a challenge asks for, if any ──
+   Text (with * standing for anything), a number, or multiple choice. Used by the
+   location challenge form and by the starting challenge's list. It edits `task` in
+   place and calls `changed` after every keystroke, so the caller can save the draft. */
+const ANSWER_LABELS = [["", "No answer here (teams answer in LoQuiz)"], ["text", "Text answer"], ["number", "Number answer"], ["choice", "Multiple choice"]];
+const ACCEPT_HELP = {
+  text: "One accepted answer per line. * stands for anything: *ple* accepts any answer containing \"ple\", ple* one starting with it. Capitals and extra spaces don't matter.",
+  number: "One accepted number per line. 1844, 1,844 and \" 1844 \" all match.",
+};
+function answerEditor(task, changed){
+  const wrap = document.createElement("div");
+  wrap.className = "answered";
+  const kind = document.createElement("select");
+  kind.className = "answerkind";
+  kind.setAttribute("aria-label", "Answer");
+  kind.append(...ANSWER_LABELS.map(([v, label]) => new Option(label, v)));
+  kind.value = Play.answerOf(task)?.kind ?? "";
+  const body = document.createElement("div");
+  const optionIds = () => Play.choiceOptions(task.answer).map(o => o.id);
+  const newOption = () => ({ id: Play.newId("o", optionIds()), text: "" });
+
+  function draw(){
+    body.replaceChildren();
+    const a = Play.answerOf(task);
+    if (!a) return;
+    if (a.kind === "choice") {
+      const list = document.createElement("ol");
+      list.className = "optlist";
+      Play.choiceOptions(a).forEach((o, i) => {
+        const li = document.createElement("li");
+        const text = field("input", o.text ?? "", `Option ${i + 1}`, v => { o.text = v; changed(); });
+        const right = document.createElement("label");
+        right.className = "optright";
+        const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: !!o.correct });
+        box.addEventListener("change", () => { o.correct = box.checked; changed(); });
+        right.append(box, document.createTextNode(" correct"));
+        const del = Object.assign(document.createElement("button"), { type: "button", className: "btn warn", textContent: "Delete" });
+        del.disabled = Play.choiceOptions(a).length < 3;
+        del.onclick = () => { a.options.splice(i, 1); draw(); changed(); };
+        li.append(text, right, del);
+        list.append(li);
+      });
+      const add = Object.assign(document.createElement("button"), { type: "button", className: "btn", textContent: "Add option" });
+      add.onclick = () => { a.options.push(newOption()); draw(); changed(); list.querySelector("li:last-child input")?.focus(); };
+      const note = Object.assign(document.createElement("div"), { className: "note", textContent: "Teams tap one. Tick every option that counts as right." });
+      body.append(list, add, note);
+      return;
+    }
+    const box = field("textarea", Play.accepted(a).join("\n"), a.kind === "number" ? "1844" : "apple",
+      v => { a.accept = v.split("\n"); changed(); });
+    box.rows = 2;
+    body.append(box, Object.assign(document.createElement("div"), { className: "note", textContent: ACCEPT_HELP[a.kind] }));
+  }
+  kind.onchange = () => {
+    if (!kind.value) delete task.answer;
+    else if (kind.value === "choice") task.answer = { kind: "choice", options: Play.choiceOptions(task.answer).length >= 2 ? task.answer.options : [newOption(), newOption()] };
+    else task.answer = { kind: kind.value, accept: Play.accepted(task.answer) };   // switching text ↔ number keeps what's typed
+    draw(); changed();
+  };
+  draw();
+  wrap.append(Object.assign(document.createElement("div"), { className: "note", textContent: "Answer" }), kind, body);
+  return wrap;
+}
+
 // The form works on a copy; nothing changes until Save succeeds.
 function openTaskForm(l, index){
   const t = index >= 0 ? structuredClone(l.tasks[index]) : { prompt:"" };
-  editing = { locId: l.id, index };
+  editing = { locId: l.id, index, task: t };
   $("tfTitle").textContent = index >= 0 ? `Edit challenge ${index + 1}` : "New challenge";
   $("tfPrompt").value = t.prompt || "";
   $("tfImage").value = t.image || "";
   showImagePreview($("tfImagePrev"), t.image);
+  // The answer is edited on the copy; Save puts it into the game with the rest.
+  $("tfAnswer").replaceChildren(answerEditor(t, () => { $("tfErrors").textContent = ""; }));
   $("tfErrors").textContent = "";
   $("taskForm").hidden = false; $("taskAdd").hidden = true;
   $("tfPrompt").focus();
@@ -741,12 +823,12 @@ function closeTaskForm(){
   editing = null;
   $("taskForm").hidden = true; $("taskAdd").hidden = false;
 }
-// A challenge is its text and an optional picture; teams answer it in LoQuiz.
+// A challenge is its text, an optional picture and, when set, the answer it asks for here.
 function readTaskForm(){
   const t = { prompt: $("tfPrompt").value.trim() };
   const image = $("tfImage").value.trim();
   if (image) t.image = image;
-  return t;
+  return { ...t, ...cleanAnswer(editing?.task?.answer) };
 }
 
 $("tfImage").addEventListener("input", e => showImagePreview($("tfImagePrev"), e.target.value));
@@ -916,8 +998,9 @@ function renderStartEditor(){
   for (const [id, key] of START_FIELDS)
     if (document.activeElement !== $(id)) $(id).value = s[key] ?? "";
   editableList("startTaskEdit", "startTaskCount", s.tasks, "challenge", t => [
-    ...withLinkTool(field("textarea", t.prompt ?? "", "What teams read; they answer in LoQuiz", v => { t.prompt = v; })),
+    ...withLinkTool(field("textarea", t.prompt ?? "", "What teams read", v => { t.prompt = v; })),
     ...imageField(t),
+    answerEditor(t, () => { saveDraft(); renderStartInfo(); if (state.progress.start === "open") renderSheet(); }),
   ], renderStartEditor);
   renderStartInfo();
 }

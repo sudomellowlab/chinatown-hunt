@@ -56,7 +56,12 @@ test("build challenges, reorder them, and a phone shows them in that order", asy
   for (const t of NEW) await addChallenge(page, t);
   await expect(prompts(page)).toHaveText(NEW.map(t => t.prompt.replace("\n", " ")));
   await expect(items(page).nth(1).locator(".tpts")).toHaveText("image");
-  await expect(page.locator("#tfType, #tfAccept, #tfHint, #tfAnswer, #tfOptions")).toHaveCount(0);
+  // No points or hints anywhere; a new challenge asks for no answer here until one is set.
+  await expect(page.locator("#tfType, #tfHint, #tfPoints")).toHaveCount(0);
+  await page.locator("#taskAdd").click();
+  await expect(page.locator("#tfAnswer select")).toHaveValue("");
+  await expect(page.locator("#tfAnswer textarea, #tfAnswer .optlist")).toHaveCount(0);
+  await page.locator("#tfCancel").click();
 
   // [a, b, c] → up on 3rd → [a, c, b] → up on 2nd → [c, a, b] → down on 2nd → [c, b, a].
   await items(page).nth(2).locator(".tup").click();

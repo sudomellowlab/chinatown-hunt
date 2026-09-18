@@ -1,5 +1,6 @@
 // A location's challenges, as a participant on a phone, with the participant file.
-// Nothing is answered here: teams read each challenge (text and picture) and answer in LoQuiz.
+// These challenges have no answer set, so nothing is answered here: teams read each one
+// (text and picture) and answer in LoQuiz. Challenges with an answer are in answers.spec.mjs.
 import { readFileSync } from "node:fs";
 import { test, expect, offset, pickArrival, far } from "./fixtures.mjs";
 import { GAME } from "../src/game.js";
@@ -18,7 +19,7 @@ async function arriveAt(app, loc = THK, approach = route.approach) {
   for (const p of approach) await app.fix(p);
   for (let i = 0; i < 3; i++) await app.fix(offset(loc, 1, i * 120));
 }
-// Nothing on screen may invite an answer or mention scoring, and no placeholder may leak through as text.
+// With no answer set, nothing on screen may invite one or mention scoring, and no placeholder may leak through as text.
 async function expectReadOnly(page) {
   await expect(page.locator("#sheet input, #sheet textarea, #sheet select, .opt, #hintBtn")).toHaveCount(0);
   const text = await page.locator("body").innerText();

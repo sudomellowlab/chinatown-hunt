@@ -417,6 +417,54 @@ function linked(text){
 // replaceChildren prints null as the text "null"; this skips anything that isn't there.
 function fill(el, ...children){ el.replaceChildren(...children.flat().filter(c => c != null && c !== false)); }
 
+/* A challenge's answer, when it has one: a box to type in, or the options to tap.
+   Until it's right, Next (or Finish) stays disabled; a wrong try says so and the team
+   tries again. Right answers are kept in progress, so a reload doesn't ask twice.
+   Challenges without an answer are unchanged: teams answer those in LoQuiz. */
+function answerBlock(task){
+  const a = Play.answerOf(task);
+  if (!a) return { solved: true, node: null };
+  if (Play.isSolved(state.progress, task))
+    return { solved: true, node: h("div", { id:"answerBox", class:"answer solved" },
+      h("p", { class:"answerverdict" }, "Correct"),
+      h("p", { class:"answergiven" }, Play.solvedAnswer(state.progress, task))) };
+
+  const msg = h("p", { id:"answerMsg", class:"hint", role:"status" });
+  const give = typed => {
+    const next = Play.solve(state.progress, task, typed);
+    if (next === state.progress) { msg.textContent = "Not quite. Try again."; return false; }
+    state.progress = next;
+    save(); renderSheet();
+    return true;
+  };
+  if (a.kind === "choice")
+    return { solved: false, node: h("div", { id:"answerBox", class:"answer choice" },
+      h("p", { class:"answerask" }, "Choose your answer:"),
+      ...Play.choiceOptions(a).map(o =>
+        h("button", { class:"secondary choicebtn", "data-id":o.id, onclick: () => give(o.id) }, o.text)),
+      msg) };
+
+  const input = h("input", { id:"answerInput", type:"text", autocomplete:"off", autocapitalize:"none", autocorrect:"off",
+    spellcheck:"false", enterkeyhint:"done", "aria-label":"Your answer",
+    ...(a.kind === "number" ? { inputmode:"decimal" } : {}) });
+  const check = () => { if (!input.value.trim()) { msg.textContent = "Type your answer first."; input.focus(); return; } give(input.value); };
+  input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); check(); } });
+  return { solved: false, node: h("div", { id:"answerBox", class:"answer" },
+    h("label", { class:"answerask", for:"answerInput" }, a.kind === "number" ? "Your answer (a number):" : "Your answer:"),
+    input,
+    h("button", { id:"answerCheck", class:"secondary", onclick: check }, "Check"),
+    msg) };
+}
+
+/* What the arrival text says about the challenges ahead: some may want their answer here,
+   the rest are answered in LoQuiz as always. */
+function askedHere(location, ending = "then finish this location before moving on."){
+  const tasks = location.tasks || [], here = tasks.filter(Play.needsAnswer).length;
+  if (!here) return `Answer ${tasks.length === 1 ? "it" : "them"} in LoQuiz, ${ending}`;
+  if (here === tasks.length) return `Answer ${tasks.length === 1 ? "it" : "them"} here to move on, ${ending}`;
+  return `${here} of them ${here === 1 ? "is" : "are"} answered here; the rest in LoQuiz, ${ending}`;
+}
+
 function renderSheet(){
   if (GAME.start && Play.startPending(state.progress)) return renderStartChallenge();
   const l = state.progress.active && locationById(state.progress.active);
@@ -437,7 +485,7 @@ function renderSheet(){
     fill(body,
       closingNote,
       h("p", { id:"sheettext" }, linked(l.arrivalText)),
-      n ? h("p", { class:"small" }, `${n} challenge${n === 1 ? "" : "s"} here. Answer them in LoQuiz, then finish this location before moving on.`) : null,
+      n ? h("p", { class:"small" }, `${n} challenge${n === 1 ? "" : "s"} here. ${askedHere(l)}`) : null,
       h("div", { class:"navrow" },
         n ? h("button", { id:"nextBtn", class:"primary", onclick: () => move(Play.next) }, "Start the challenges")
           : h("button", { id:"finishBtn", class:"primary", onclick: finishActive }, finishLabel)),
@@ -445,14 +493,16 @@ function renderSheet(){
   } else {
     const { task, index, total, last } = stage;
     $("sheetplace").textContent = `challenge ${index + 1} of ${total}`;
+    const answer = answerBlock(task);
     fill(body,
       closingNote,
       picture(task.image, "qimg", "Picture for this challenge"),
       task.prompt ? h("p", { id:"prompt", class:"prompt" }, linked(task.prompt)) : null,
+      answer.node,
       h("div", { class:"navrow" },
         h("button", { id:"backBtn", class:"secondary", onclick: () => move(Play.back) }, "Back"),
-        last ? h("button", { id:"finishBtn", class:"primary", onclick: finishActive }, finishLabel)
-             : h("button", { id:"nextBtn", class:"primary", onclick: () => move(Play.next) }, "Next")),
+        last ? h("button", { id:"finishBtn", class:"primary", disabled: !answer.solved, onclick: finishActive }, finishLabel)
+             : h("button", { id:"nextBtn", class:"primary", disabled: !answer.solved, onclick: () => move(Play.next) }, "Next")),
     );
   }
   $("sheet").classList.add("up");
@@ -532,18 +582,21 @@ function renderStartChallenge(){
       $("sheetplace").textContent = "starting challenge";
       fill(body,
         s.arrivalText ? h("p", { id:"sheettext" }, linked(s.arrivalText)) : null,
-        n ? h("p", { class:"small" }, `${n} challenge${n === 1 ? "" : "s"} to start. Answer ${n === 1 ? "it" : "them"} in LoQuiz, then go to the map.`) : null,
+        n ? h("p", { class:"small" }, `${n} challenge${n === 1 ? "" : "s"} to start. ${askedHere(l, "then go to the map.")}`) : null,
         h("div", { class:"navrow" }, n ? h("button", { id:"nextBtn", class:"primary", onclick: () => move(Play.next) }, "Start the challenges") : finish),
       );
     } else {
       const { task, index, total, last } = stage;
       $("sheetplace").textContent = `starting challenge ${index + 1} of ${total}`;
+      const answer = answerBlock(task);
+      if (last) finish.disabled = !answer.solved;
       fill(body,
         picture(task.image, "qimg", "Picture for this challenge"),
         task.prompt ? h("p", { id:"prompt", class:"prompt" }, linked(task.prompt)) : null,
+        answer.node,
         h("div", { class:"navrow" },
           h("button", { id:"backBtn", class:"secondary", onclick: () => move(Play.back) }, "Back"),
-          last ? finish : h("button", { id:"nextBtn", class:"primary", onclick: () => move(Play.next) }, "Next")),
+          last ? finish : h("button", { id:"nextBtn", class:"primary", disabled: !answer.solved, onclick: () => move(Play.next) }, "Next")),
       );
     }
   }

@@ -313,3 +313,24 @@ a.textlink::after{content:" ↗";font-size:.8em;text-decoration:none;display:inl
 #unlock button{flex:1;min-height:46px;font-size:16px;border:1px solid var(--ink)}
 #unlock button.primary{background:var(--ink);color:var(--sheet)}
 #unlock button.secondary{background:transparent}
+
+/* ---------- answers on a challenge ---------- */
+#sheet .answer{margin:0 0 4px}
+#sheet .answer .answerask{display:block;font-size:13px;color:var(--slate);margin:4px 0 6px}
+#sheet #answerInput{width:100%;font-family:var(--serif);font-size:20px;padding:12px;border:1px solid var(--ink);
+  min-height:52px;background:#fff;color:var(--ink)}
+#sheet .answer .choicebtn{text-align:left;padding:13px 15px}
+#sheet #answerMsg{margin-top:12px}
+#sheet #answerMsg:empty{display:none}
+#sheet .answer.solved{border-left:3px solid var(--jade);padding:4px 0 4px 12px;background:rgba(46,107,94,.08)}
+#sheet .answer.solved .answerverdict{font-size:13px;color:var(--jade);margin:0}
+#sheet .answer.solved .answergiven{font-size:18px;font-weight:600;margin:0}
+#sheet button:disabled{opacity:.45}
+
+/* ---------- the answer a challenge asks for (admin) ---------- */
+.answered{margin-top:10px;border-top:1px dashed var(--linen-deep);padding-top:8px}
+.answered select.answerkind{width:100%;margin-bottom:6px}
+.answered .optlist{list-style:decimal;margin:6px 0 8px;padding-left:22px}
+.answered .optlist li{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;margin-bottom:6px}
+.answered .optlist .optright{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--slate);white-space:nowrap}
+.answered .optlist .optright input{width:auto;min-height:0}

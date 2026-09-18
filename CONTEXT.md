@@ -59,6 +59,10 @@ Node 22+ only. `npm ci` is needed just for the browser tests.
   phone-sized window. Tap Begin, then click the map (or a pin, or use **Go to**) to fake your
   location; the location opens after about 3 seconds, as on a real phone. **Skip to clues**
   jumps the clock; **Restart** starts over. Allow pop-ups for the page if it's blocked.
+- **Answers:** in the challenge editor, pick Text, Number or Multiple choice under **Answer**
+  (or leave it as "No answer here"). Teams then must answer that challenge on the phone
+  before Next lets them on. "Next challenge" and "Finish location" in the admin panel (and
+  the field tools) still step past one, for testing.
 - **Clues screen:** in the admin panel, **Show the clues screen now** previews it; dragging
   the **Clock** slider (State section) below the reveal time triggers it for real.
 - **Admin file:** open it, then in the panel use **Jump to a location…** under Position
@@ -122,7 +126,11 @@ first.
   developer panel, encrypted with that password (the password itself isn't in the file).
 - Challenges: text and an optional picture each, shown one at a time with Back and Next and
   Finish location on the last; the admin editor to add, edit, reorder and delete them.
-  Nothing is answered on this site.
+- Answers (optional, per challenge): text, number or multiple choice. Teams must get it right
+  here before moving on; wrong tries just say "Not quite. Try again." Text answers may use
+  * for "anything" (*ple* accepts any answer containing "ple"), capitals and extra spaces are
+  ignored, and several accepted answers can be listed one per line. Numbers ignore commas.
+  Challenges with no answer set are unchanged: teams read them and answer in LoQuiz.
 - Starting challenge (optional, 18 September 2026): opens as soon as a team taps Begin, with no
   location needed. It asks first for a password the LoQuiz host gives out (capitals and extra
   spaces don't matter) under wording you can change, then shows its text and challenges; no location opens until it's
@@ -141,7 +149,7 @@ first.
 - Clues & suspects: you set the game length, how many minutes before the end they appear,
   and both lists. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 131 unit tests and 108 browser tests, run by CI on every push.
+- 155 unit tests and 114 browser tests, run by CI on every push.
 
 **Live (17 September 2026)**
 - Real content is in: 9 locations, 60 challenges (49 with pictures on

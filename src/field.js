@@ -86,6 +86,7 @@ body.fttap #map{cursor:crosshair}`;
       btn("ftFinish", "Finish open location", () => {
         const l = locationById(state.progress.active); if (!l) { alert("No location is open."); return; }
         state.progress = Play.goTo(state.progress, l, (l.tasks || []).length - 1);
+        state.progress = Play.markSolved(state.progress, Play.stage(l, state.progress).task);   // step past an unanswered challenge
         finishActive(); close();
       })),
     h("div", { class: "ftrow" },
