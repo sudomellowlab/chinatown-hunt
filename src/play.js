@@ -13,8 +13,9 @@
    - Once a location opens, no other location can open until it's finished.
    - An optional starting challenge (`game.start`) opens at Begin, with no
      location needed. It asks first for a password, which the LoQuiz host
-     gives out; then its text and challenges show like a location's. Until
-     it's finished, no location can open.
+     gives out, and then goes straight to its first challenge: it has no
+     screen of its own in between (any text it carries sits above that first
+     challenge). Until it's finished, no location can open.
    - Reveal: from `revealMinutes` before the end of the team's own clock,
      or once every location is finished, no new location can open. A team
      part-way through a location finishes it; then the clues & suspects
@@ -120,12 +121,23 @@ const Play = {
   },
   // Until the starting challenge is finished, no location can open.
   startPending(progress){ return progress.start === "locked" || progress.start === "open"; },
-  unlockStart(progress){ return progress.start === "locked" ? { ...progress, start: "open" } : progress; },
+  // The password leads straight to the first challenge: there is no screen in between.
+  unlockStart(progress){
+    return progress.start === "locked" ? { ...progress, start: "open", at: { ...progress.at, [Play.START]: 0 } } : progress;
+  },
+  /* What the team sees once it's open: always a challenge, never an arrival screen.
+     `kind:"none"` only for a starting challenge left with no challenges at all. */
+  startStage(start, progress){
+    const l = Play.startAsLocation(start);
+    if (!l.tasks.length) return { kind: "none", total: 0 };
+    const s = Play.stage(l, progress);
+    return s.kind === "task" ? s : { kind: "task", task: l.tasks[0], index: 0, total: l.tasks.length, last: l.tasks.length === 1 };
+  },
   canFinishStart(start, progress){
     if (progress.start !== "open") return false;
-    const s = Play.stage(Play.startAsLocation(start), progress);
-    if (s.kind === "task" && !Play.isSolved(progress, s.task)) return false;
-    return s.kind === "task" ? s.last : s.total === 0;
+    const s = Play.startStage(start, progress);
+    if (s.kind === "none") return true;
+    return s.last && Play.isSolved(progress, s.task);
   },
   finishStart(progress, start){
     return Play.canFinishStart(start, progress) ? { ...progress, start: "done" } : progress;

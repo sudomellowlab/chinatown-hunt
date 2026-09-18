@@ -574,28 +574,26 @@ function renderStartChallenge(){
     $("sheetplace").textContent = "starting challenge";
     fill(body, h("p", { class:"small" }, "Opening…"));
   } else {
-    const l = Play.startAsLocation(s), stage = Play.stage(l, state.progress);
+    /* No screen of its own: the password leads straight to the first challenge. Any text the
+       organiser wrote sits above that first one. */
+    const l = Play.startAsLocation(s), stage = Play.startStage(s, state.progress);
     const move = fn => { state.progress = fn(state.progress, l); save(); renderSheet(); $("sheet").scrollTop = 0; };
     const finish = h("button", { id:"finishBtn", class:"primary", onclick: finishStart }, "Finish and go to the map");
-    if (stage.kind === "arrival") {
-      const n = stage.total;
+    if (stage.kind === "none") {
       $("sheetplace").textContent = "starting challenge";
-      fill(body,
-        s.arrivalText ? h("p", { id:"sheettext" }, linked(s.arrivalText)) : null,
-        n ? h("p", { class:"small" }, `${n} challenge${n === 1 ? "" : "s"} to start. ${askedHere(l, "then go to the map.")}`) : null,
-        h("div", { class:"navrow" }, n ? h("button", { id:"nextBtn", class:"primary", onclick: () => move(Play.next) }, "Start the challenges") : finish),
-      );
+      fill(body, s.arrivalText ? h("p", { id:"sheettext" }, linked(s.arrivalText)) : null, h("div", { class:"navrow" }, finish));
     } else {
       const { task, index, total, last } = stage;
-      $("sheetplace").textContent = `starting challenge ${index + 1} of ${total}`;
+      $("sheetplace").textContent = total > 1 ? `starting challenge ${index + 1} of ${total}` : "starting challenge";
       const answer = answerBlock(task);
       if (last) finish.disabled = !answer.solved;
       fill(body,
+        index === 0 && s.arrivalText ? h("p", { id:"sheettext" }, linked(s.arrivalText)) : null,
         picture(task.image, "qimg", "Picture for this challenge"),
         task.prompt ? h("p", { id:"prompt", class:"prompt" }, linked(task.prompt)) : null,
         answer.node,
         h("div", { class:"navrow" },
-          h("button", { id:"backBtn", class:"secondary", onclick: () => move(Play.back) }, "Back"),
+          index > 0 ? h("button", { id:"backBtn", class:"secondary", onclick: () => move(Play.back) }, "Back") : null,
           last ? finish : h("button", { id:"nextBtn", class:"primary", disabled: !answer.solved, onclick: () => move(Play.next) }, "Next")),
       );
     }

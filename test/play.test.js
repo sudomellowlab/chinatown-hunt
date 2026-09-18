@@ -321,12 +321,18 @@ describe("the starting challenge", () => {
     assert.equal(Play.unlockStart(Play.emptyProgress()).start, undefined);
   });
 
-  test("it steps like a location: text, then each challenge; Finish only on the last", () => {
+  test("the password leads straight to the first challenge, with no screen in between", () => {
+    const p = unlocked();
+    assert.deepEqual(Play.startStage(start, p), { kind: "task", task: s1, index: 0, total: 2, last: false });
+    assert.equal(p.at[Play.START], 0, "it opens on the first challenge, not an arrival screen");
+    // Even if the place is missing (an older phone's progress), it still shows the first challenge.
+    assert.equal(Play.startStage(start, { ...p, at: {} }).task, s1);
+    assert.deepEqual(Play.startStage({ ...start, tasks: [] }, p), { kind: "none", total: 0 });
+  });
+
+  test("it steps through its challenges; Finish only on the last", () => {
     let p = unlocked();
-    assert.deepEqual(Play.stage(S, p), { kind: "arrival", total: 2 });
-    assert.equal(Play.canFinishStart(start, p), false);
-    p = Play.next(p, S);
-    assert.equal(Play.stage(S, p).task, s1);
+    assert.equal(Play.startStage(start, p).task, s1);
     assert.equal(Play.canFinishStart(start, p), false);
     assert.equal(Play.finishStart(p, start), p);
     p = Play.next(p, S);
