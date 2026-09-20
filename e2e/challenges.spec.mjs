@@ -64,7 +64,7 @@ test("arrival text, then each challenge with Next and Back, then Finish location
 
   await expect(page.locator("#sheet")).not.toHaveClass(/\bup\b/);
   await expect(page.locator("#reached")).toHaveText("1");
-  await expect(page.locator(`.pin[data-id="${THK.id}"]`)).toHaveClass(/\breached\b/);
+  await expect(page.locator(`.pin[data-id="${THK.id}"]`)).toHaveCount(0, "a finished location leaves the map");
   await expectReadOnly(page);
 });
 

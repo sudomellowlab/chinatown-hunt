@@ -124,6 +124,8 @@ first.
 - **Export game file** producing the participant file, with the admin tools stripped out
   and the content scrambled. With a field tools password set, the file also carries a
   developer panel, encrypted with that password (the password itself isn't in the file).
+- Finished locations disappear from the map (pin and shaded circle) on a team's phone, so
+  only what's left to do is shown. The admin panel keeps them, for editing.
 - Challenges: text and an optional picture each, shown one at a time with Back and Next and
   Finish location on the last; the admin editor to add, edit, reorder and delete them.
 - Answers (optional, per challenge): text, number or multiple choice. Teams must get it right
@@ -149,7 +151,7 @@ first.
 - Clues & suspects: you set the game length, how many minutes before the end they appear,
   and both lists. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 156 unit tests and 114 browser tests, run by CI on every push.
+- 156 unit tests and 116 browser tests, run by CI on every push.
 
 **Live (17 September 2026)**
 - Real content is in: 9 locations, 60 challenges (49 with pictures on

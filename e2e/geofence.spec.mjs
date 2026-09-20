@@ -193,7 +193,7 @@ test("pins are teardrops whose tip marks the spot, inside a clearly shaded area 
   expect(Math.abs(pin.x + pin.width / 2 - (ring.x + ring.width / 2))).toBeLessThan(1.5);
   expect(Math.abs(pin.y + 32 - (ring.y + ring.height / 2))).toBeLessThan(1.5);
 
-  // Gold while open, green once finished.
+  // Gold while open, then gone from the map altogether once finished.
   await app.begin(far(GAME.locations));
   for (let i = 0; i < 3; i++) await app.fix(offset(loc, 1, i * 120));
   expect((await style(loc.id)).fill).toBe("#8A6D2F");
@@ -201,6 +201,42 @@ test("pins are teardrops whose tip marks the spot, inside a clearly shaded area 
   await page.locator("#nextBtn").click();
   for (let i = 1; i < loc.tasks.length; i++) await page.locator("#nextBtn").click();
   await page.locator("#finishBtn").click();
-  expect((await style(loc.id)).fill).toBe("#2E6B5E");
+  await expect(page.locator(`.pin[data-id="${loc.id}"]`)).toHaveCount(0);
+});
+
+test("a finished location leaves the map, pin and shaded circle, and stays gone after a reload", async ({ app, page }) => {
+  await app.open({ file: "play" });
+  const loc = GAME.locations[0], rings = () => page.locator(".leaflet-overlay-pane path");
+  await expect(page.locator(".pin")).toHaveCount(GAME.locations.length);
+  await expect(rings()).toHaveCount(GAME.locations.length);
+
+  await app.begin(far(GAME.locations));
+  for (let i = 0; i < 3; i++) await app.fix(offset(loc, 1, i * 120));
+  await page.locator("#nextBtn").click();
+  for (let i = 1; i < loc.tasks.length; i++) await page.locator("#nextBtn").click();
+  await page.locator("#finishBtn").click();
+
+  // Its pin and circle are gone; every other location is still there, and the tally still counts it.
+  await expect(page.locator(`.pin[data-id="${loc.id}"]`)).toHaveCount(0);
+  await expect(page.locator(".pin")).toHaveCount(GAME.locations.length - 1);
+  // One circle per location that's left, plus the circle showing how accurate this phone's position is.
+  await expect(rings()).toHaveCount(GAME.locations.length - 1 + 1);
+  await expect(page.locator("#reached")).toHaveText("1");
+
+  await page.reload();
+  await expect(page.locator(".pin")).toHaveCount(GAME.locations.length - 1);
+  await expect(page.locator(`.pin[data-id="${loc.id}"]`)).toHaveCount(0);
+});
+
+test("the admin file keeps finished pins on the map, so they can still be edited", async ({ app, page }) => {
+  await app.open();
+  const locs = await app.locations();
+  const { loc, approach } = pickArrival(locs);
+  await app.startGps(approach[0]);
+  for (let i = 0; i < 3; i++) await app.fix(loc);
+  await app.openTools();
+  await page.locator("#solveAll").click();                       // finish it outright
+  await expect(page.locator("#reached")).toHaveText("1");
   await expect(page.locator(`.pin[data-id="${loc.id}"]`)).toHaveClass(/\breached\b/);
+  await expect(page.locator(".pin")).toHaveCount(locs.length);
 });

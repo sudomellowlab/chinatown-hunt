@@ -303,6 +303,16 @@ function styleLocation(id){
     el.classList.toggle("active", state.progress.active === id);
   }
   styleRing(id);
+  showOnMap(id, !(BUILD !== "admin" && state.progress.completed.includes(id)));
+}
+/* A finished location leaves the map altogether, pin and shaded circle, so teams see only
+   what is still to do. The admin file keeps every pin, since they're what it edits. */
+function showOnMap(id, on){
+  for (const layer of [pins[id], rings[id]]) {
+    if (!layer) continue;
+    if (on && !map.hasLayer(layer)) layer.addTo(map);
+    else if (!on && map.hasLayer(layer)) map.removeLayer(layer);
+  }
 }
 // Ring look: jade once done, brass while active, dashed ink otherwise (the admin tools may override while editing).
 function styleRing(id){
