@@ -104,12 +104,15 @@ test("import brings the starting challenge back only with its password; Remove t
   await setUpStart(app, page);
   const html = await exportGame(page);
   const upload = () => page.locator("#importGame").setInputFiles({ name: FILE, mimeType: "text/html", buffer: Buffer.from(html) });
+  // Start over and a successful import both reload the page; wait for that, or the next
+  // click can land while the old page is going away.
+  const reloads = fn => Promise.all([page.waitForEvent("load"), fn()]);
   const replace = `Replace the game you're building here with the one in ${FILE}?`;
   const ask = `${FILE} has a starting challenge, locked with its password. Type that password to import it:`;
 
   // Start over, so the draft no longer has it.
   app.expectDialog("Throw away all your changes (locations, text and challenges) and start again from the default game? Export first if you might want them.", { accept: true });
-  await page.locator("#resetDraft").click();
+  await reloads(() => page.locator("#resetDraft").click());
   await expect(page.locator(".pin")).toHaveCount(8);
   await app.openTools();
   await expect(page.locator("#startAdd")).toBeVisible();
@@ -124,7 +127,7 @@ test("import brings the starting challenge back only with its password; Remove t
   // The right one restores it all.
   app.expectDialog(replace, { accept: true });
   app.expectDialog(ask, { accept: true, value: "red lantern" });
-  await upload();
+  await reloads(upload);
   await expect(page.locator(".pin")).toHaveCount(8);
   await app.openTools();
   await expect(page.locator("#startFields")).toBeVisible();

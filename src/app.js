@@ -466,15 +466,6 @@ function answerBlock(task){
     msg) };
 }
 
-/* What the arrival text says about the challenges ahead: some may want their answer here,
-   the rest are answered in LoQuiz as always. */
-function askedHere(location, ending = "then finish this location before moving on."){
-  const tasks = location.tasks || [], here = tasks.filter(Play.needsAnswer).length;
-  if (!here) return `Answer ${tasks.length === 1 ? "it" : "them"} in LoQuiz, ${ending}`;
-  if (here === tasks.length) return `Answer ${tasks.length === 1 ? "it" : "them"} here to move on, ${ending}`;
-  return `${here} of them ${here === 1 ? "is" : "are"} answered here; the rest in LoQuiz, ${ending}`;
-}
-
 function renderSheet(){
   if (GAME.start && Play.startPending(state.progress)) return renderStartChallenge();
   const l = state.progress.active && locationById(state.progress.active);
@@ -494,7 +485,6 @@ function renderSheet(){
     fill(body,
       closingNote,
       h("p", { id:"sheettext" }, linked(l.arrivalText)),
-      n ? h("p", { class:"small" }, `${n} challenge${n === 1 ? "" : "s"} here. ${askedHere(l)}`) : null,
       h("div", { class:"navrow" },
         n ? h("button", { id:"nextBtn", class:"primary", onclick: () => move(Play.next) }, "Start the challenges")
           : h("button", { id:"finishBtn", class:"primary", onclick: finishActive }, finishLabel)),

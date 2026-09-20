@@ -41,7 +41,7 @@ test("arrival text, then each challenge with Next and Back, then Finish location
   await expect(page.locator("#sheet .place, #sheetplace")).toHaveCount(0);
   await expect(page.locator("#sheet")).not.toContainText(/you have arrived|challenge \d+ of/i);
   await expect(page.locator("#sheettext")).toHaveText(THK.arrivalText);
-  await expect(page.locator("#stage .small")).toHaveText("3 challenges here. Answer them in LoQuiz, then finish this location before moving on.");
+  await expect(page.locator("#stage .small")).toHaveCount(0, "nothing is added under the organiser's arrival text");
   await expect(page.locator("#backBtn")).toHaveCount(0);
   await expectReadOnly(page);
   await page.locator("#nextBtn").click();                        // Start the challenges

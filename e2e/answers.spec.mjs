@@ -61,8 +61,7 @@ test("a team must answer text, number and multiple choice challenges before movi
   for (const secret of ["*lotus*", "durian", "Guangzhou", "Fujian"]) expect(html).not.toContain(secret);
 
   await atTheTemple(browser, html, async (phone) => {
-    await expect(phone.locator("#stage .small")).toHaveText(
-      "3 challenges here. Answer them here to move on, then finish this location before moving on.");
+    await expect(phone.locator("#stage .small")).toHaveCount(0);
     await phone.locator("#nextBtn").click();
 
     // 1. Text, with * standing for anything.
