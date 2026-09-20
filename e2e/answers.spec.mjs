@@ -106,7 +106,7 @@ test("a team must answer text, number and multiple choice challenges before movi
     await expect(phone.locator("#start")).toBeHidden();
     await expect(phone.locator("#answerBox")).toHaveClass(/solved/);
     await phone.locator("#backBtn").click();
-    await expect(phone.locator("#sheetplace")).toHaveText("challenge 2 of 3");
+    await expect(phone.locator("#prompt")).toHaveText(THK.tasks[1].prompt);   // back on the number question
     await expect(phone.locator("#answerBox")).toContainText("1,844");
     await phone.locator("#nextBtn").click();
     await phone.locator("#finishBtn").click();

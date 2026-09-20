@@ -73,7 +73,7 @@ test("a team part-way through a location finishes it first, then sees the clues"
 
   await page.clock.fastForward(revealAt + MIN);
   await expect(page.locator("#closingNote")).toHaveText("Time is nearly up. Finish this location to see the clues.");
-  await expect(page.locator("#sheetplace"), "the team stays where they were").toHaveText("challenge 2 of 3");
+  await expect(page.locator("#prompt"), "the team stays where they were").toHaveText(THK.tasks[1].prompt);
   await expect(reveal(page)).toBeHidden();
   await expect(page.locator("#target")).toHaveText(THK.name);
 

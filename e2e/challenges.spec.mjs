@@ -26,37 +26,43 @@ async function expectReadOnly(page) {
   expect(text).not.toMatch(/\bpoints?\b|\bcorrect\b|\bwrong\b|\bscore\b|\bsubmit\b|\bhint\b/i);
   expect(text).not.toMatch(/\bnull\b|\bundefined\b|\[object /);
 }
-const place = page => page.locator("#sheetplace");
+/* Where the team is, now that no line on screen announces it: the challenge's own text,
+   or "arrival" on the arrival screen. */
+const at = async page => await page.locator("#prompt").count() ? (await page.locator("#prompt").innerText()) : "arrival";
+const expectAt = async (page, what) => expect.poll(() => at(page), { message: "the challenge showing" }).toBe(what);
 
 test("arrival text, then each challenge with Next and Back, then Finish location on the last", async ({ app, page }) => {
   await app.open({ file: "play" });
   await arriveAt(app);
 
   await expect(page.locator("#sheetname")).toHaveText(THK.name);
-  await expect(place(page)).toHaveText("you have arrived");
+  await expectAt(page, "arrival");
+  // Nothing announces where in the location the team is ("challenge 2 of 3", "you have arrived").
+  await expect(page.locator("#sheet .place, #sheetplace")).toHaveCount(0);
+  await expect(page.locator("#sheet")).not.toContainText(/you have arrived|challenge \d+ of/i);
   await expect(page.locator("#sheettext")).toHaveText(THK.arrivalText);
   await expect(page.locator("#stage .small")).toHaveText("3 challenges here. Answer them in LoQuiz, then finish this location before moving on.");
   await expect(page.locator("#backBtn")).toHaveCount(0);
   await expectReadOnly(page);
   await page.locator("#nextBtn").click();                        // Start the challenges
 
-  await expect(place(page)).toHaveText("challenge 1 of 3");
+  await expectAt(page, C1.prompt);
   await expect(page.locator("#prompt")).toHaveText(C1.prompt);
   await expect(page.locator("#finishBtn")).toHaveCount(0);
   await expectReadOnly(page);
   await page.locator("#nextBtn").click();
 
-  await expect(place(page)).toHaveText("challenge 2 of 3");
+  await expectAt(page, C2.prompt);
   await expect(page.locator("#prompt")).toHaveText(C2.prompt);
   await page.locator("#backBtn").click();                        // re-read the first
-  await expect(place(page)).toHaveText("challenge 1 of 3");
+  await expectAt(page, C1.prompt);
   await page.locator("#backBtn").click();                        // and the arrival text
-  await expect(place(page)).toHaveText("you have arrived");
+  await expectAt(page, "arrival");
   await page.locator("#nextBtn").click();
   await page.locator("#nextBtn").click();
   await page.locator("#nextBtn").click();
 
-  await expect(place(page)).toHaveText("challenge 3 of 3");
+  await expectAt(page, C3.prompt);
   await expect(page.locator("#nextBtn")).toHaveCount(0);
   await expect(page.locator("#finishBtn")).toHaveText("Finish location");
   await expectReadOnly(page);
@@ -73,13 +79,13 @@ test("a reload mid-location comes back to the same challenge", async ({ app, pag
   await arriveAt(app);
   await page.locator("#nextBtn").click();
   await page.locator("#nextBtn").click();
-  await expect(place(page)).toHaveText("challenge 2 of 3");
+  await expectAt(page, C2.prompt);
 
   await page.reload();
   await expect(page.locator("#startBtn")).toHaveText("Continue");
   await page.locator("#startBtn").click();
   await expect(page.locator("#sheetname")).toHaveText(THK.name);
-  await expect(place(page)).toHaveText("challenge 2 of 3");
+  await expectAt(page, C2.prompt);
   await expect(page.locator("#prompt")).toHaveText(C2.prompt);
 });
 
@@ -104,7 +110,7 @@ test("no leaving: while a location is open, no other location opens and the shee
   await page.locator("#finishBtn").click();
   for (let i = 0; i < 3; i++) await app.fix(offset(other.loc, 1, i * 90));
   await expect(page.locator("#sheetname")).toHaveText(other.loc.name);
-  await expect(place(page)).toHaveText("you have arrived");
+  await expectAt(page, "arrival");
 });
 
 test("a location with no challenges shows its arrival text and Finish location", async ({ app, page }) => {
@@ -135,7 +141,7 @@ test("a re-uploaded game keeps progress: a reworded challenge and an added one",
   await arriveAt(app);
   await page.locator("#nextBtn").click();
   await page.locator("#nextBtn").click();
-  await expect(place(page)).toHaveText("challenge 2 of 3");
+  await expectAt(page, C2.prompt);
 
   // The organiser rewords challenge 2 and adds a fourth, then re-uploads.
   const game = structuredClone(GAME);
@@ -145,8 +151,7 @@ test("a re-uploaded game keeps progress: a reworded challenge and an added one",
   await app.open({ file: "play", html: playHtml(game) });
 
   await page.locator("#startBtn").click();
-  await expect(place(page)).toHaveText("challenge 2 of 4");
-  await expect(page.locator("#prompt")).toHaveText("How many stone lions guard the entrance?");
+  await expectAt(page, "How many stone lions guard the entrance?");   // still the second challenge, reworded
   await page.locator("#nextBtn").click();
   await page.locator("#nextBtn").click();
   await expect(page.locator("#prompt")).toHaveText("Name the temple's sea goddess.");
@@ -202,7 +207,7 @@ test("an open location fills the screen; the buttons stay in reach under long te
   await expect(page.locator("#nextBtn")).toBeInViewport({ ratio: 1 });
   await expect(page.locator("#backBtn")).toBeInViewport({ ratio: 1 });
   await page.locator("#nextBtn").click();
-  await expect(place(page)).toHaveText("challenge 2 of 3");
+  await expectAt(page, C2.prompt);
   await expect(page.locator("#prompt")).toBeInViewport();          // the next challenge starts at the top
 
   // Back on the map once finished.
@@ -240,7 +245,7 @@ test("links in the organiser's text open in a new tab and leave the game where i
   const [tab] = await Promise.all([context.waitForEvent("page"), page.locator("#prompt a").click()]);
   await tab.waitForLoadState();
   expect(tab.url()).toBe("https://history.test/plaque");
-  await expect(page.locator("#sheetplace"), "the game is still on the same challenge").toHaveText("challenge 1 of 3");
+  await expect(page.locator("#prompt"), "the game is still on the same challenge").toContainText("Look at");
   expect(page.url()).toContain("chinatown-hunt.html");
 
   // Links on the clues screen too.

@@ -490,7 +490,6 @@ function renderSheet(){
   const move = fn => { state.progress = fn(state.progress, l); save(); renderSheet(); $("sheet").scrollTop = 0; };
 
   if (stage.kind === "arrival") {
-    $("sheetplace").textContent = "you have arrived";
     const n = stage.total;
     fill(body,
       closingNote,
@@ -502,7 +501,6 @@ function renderSheet(){
     );
   } else {
     const { task, index, total, last } = stage;
-    $("sheetplace").textContent = `challenge ${index + 1} of ${total}`;
     const answer = answerBlock(task);
     fill(body,
       closingNote,
@@ -554,7 +552,6 @@ function renderStartChallenge(){
   const s = GAME.start, body = $("stage");
   $("sheetname").textContent = s.name;
   if (state.progress.start === "locked") {
-    $("sheetplace").textContent = "starting challenge";
     const input = h("input", { id:"startPass", type:"text", autocomplete:"off", autocapitalize:"none", autocorrect:"off",
       spellcheck:"false", enterkeyhint:"go", "aria-label":"Password" });
     const msg = h("p", { id:"startPassMsg", class:"hint", role:"status" });
@@ -581,7 +578,6 @@ function renderStartChallenge(){
       h("div", { class:"navrow" }, btn),
     );
   } else if (!startLoaded()) {
-    $("sheetplace").textContent = "starting challenge";
     fill(body, h("p", { class:"small" }, "Opening…"));
   } else {
     /* No screen of its own: the password leads straight to the first challenge. Any text the
@@ -590,11 +586,9 @@ function renderStartChallenge(){
     const move = fn => { state.progress = fn(state.progress, l); save(); renderSheet(); $("sheet").scrollTop = 0; };
     const finish = h("button", { id:"finishBtn", class:"primary", onclick: finishStart }, "Finish and go to the map");
     if (stage.kind === "none") {
-      $("sheetplace").textContent = "starting challenge";
       fill(body, s.arrivalText ? h("p", { id:"sheettext" }, linked(s.arrivalText)) : null, h("div", { class:"navrow" }, finish));
     } else {
       const { task, index, total, last } = stage;
-      $("sheetplace").textContent = total > 1 ? `starting challenge ${index + 1} of ${total}` : "starting challenge";
       const answer = answerBlock(task);
       if (last) finish.disabled = !answer.solved;
       fill(body,

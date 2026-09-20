@@ -90,7 +90,6 @@ test("build challenges, reorder them, and a phone shows them in that order", asy
     await expect(phonePage.locator("#sheettext")).toHaveText("Welcome to the temple. Look closely.");
     await phonePage.locator("#nextBtn").click();
     for (const [i, t] of shown.entries()) {
-      await expect(phonePage.locator("#sheetplace")).toHaveText(`challenge ${i + 1} of 3`);
       expect(await phonePage.locator("#prompt").evaluate(el => el.innerText)).toBe(t.prompt);
       await expect(phonePage.locator("#stage figure")).toHaveCount(t.image ? 1 : 0);
       if (i < 2) await phonePage.locator("#nextBtn").click();

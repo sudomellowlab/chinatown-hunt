@@ -89,7 +89,6 @@ body.dev #strip{top:30px;padding-top:7px}
 #sheet .rule{height:9px;margin:0 -20px 18px;border-bottom:1px solid var(--ink);
   background:repeating-linear-gradient(90deg,var(--ink) 0 1px,transparent 1px 13px)}
 #sheet h2{font-size:27px;line-height:1.1;margin:0 0 4px;font-weight:600}
-#sheet .place{font-size:12px;color:var(--jade);margin-bottom:14px}
 #sheet p{font-size:16px;line-height:1.55;max-width:62ch;margin:0 0 16px}
 #sheet p.small{font-size:14px;color:var(--slate);margin-top:-6px}
 #sheet p.prompt{font-size:20px;line-height:1.4;font-weight:600}

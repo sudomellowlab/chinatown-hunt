@@ -70,7 +70,6 @@ test("a phone must type the LoQuiz password before its first challenge, and no l
     // Straight to the first challenge: no screen in between, with its text above it and no Back.
     await expect(phonePage.locator("#prompt")).toHaveText(TASKS[0]);
     await expect(phonePage.locator("#sheettext")).toHaveText(WELCOME);
-    await expect(phonePage.locator("#sheetplace")).toHaveText("starting challenge 1 of 2");
     await expect(phonePage.locator("#backBtn")).toHaveCount(0);
 
     // Part-way through, a reload comes back to the same challenge without asking again.
@@ -82,7 +81,6 @@ test("a phone must type the LoQuiz password before its first challenge, and no l
 
     // Back and Next from there on; Finish on the last one frees the map.
     await phonePage.locator("#nextBtn").click();
-    await expect(phonePage.locator("#sheetplace")).toHaveText("starting challenge 2 of 2");
     await expect(phonePage.locator("#prompt")).toHaveText(TASKS[1]);
     await expect(phonePage.locator("#sheettext")).toHaveCount(0, "the text only sits above the first challenge");
     await phonePage.locator("#backBtn").click();

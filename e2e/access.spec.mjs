@@ -58,7 +58,7 @@ test("a participant who reloads sees Continue and keeps their progress", async (
   await expect(page.locator("#sheetname")).toHaveText(loc.name);
   await page.locator("#nextBtn").click();                         // start the challenges
   await page.locator("#nextBtn").click();                         // to challenge 2
-  await expect(page.locator("#sheetplace")).toHaveText(`challenge 2 of ${loc.tasks.length}`);
+  await expect(page.locator("#prompt")).toHaveText(loc.tasks[1].prompt);
 
   await page.reload();
   await expect(page.locator("#start")).toBeVisible();
