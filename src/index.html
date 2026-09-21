@@ -82,10 +82,12 @@ body.preview #sheet{padding-top:62px}
     <div class="place">the investigation</div>
     <h1 id="revealTitle"></h1>
     <p class="lead" id="revealLead"></p>
-    <h2>Clues</h2>
+    <div class="revealtabs">
+      <button type="button" id="cluesTab">Clues</button>
+      <button type="button" id="suspectsTab">Suspects</button>
+    </div>
     <ol id="clueList" class="cluelist"></ol>
-    <h2>Suspects</h2>
-    <ul id="suspectList" class="suspectlist"></ul>
+    <ul id="suspectList" class="suspectlist" hidden></ul>
   </div>
 </div>
 

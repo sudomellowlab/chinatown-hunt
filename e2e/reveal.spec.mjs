@@ -12,12 +12,24 @@ const THK = GAME.locations.find(l => l.id === "thian-hock-keng");
 const route = pickArrival([THK, ...GAME.locations.filter(l => l !== THK)]);
 
 const reveal = page => page.locator("#reveal");
+/* The screen opens on the clues, with the suspects one tap away; the only things to tap are
+   those two buttons (there is no accusation here). */
 async function expectClues(page, game = GAME) {
   await expect(reveal(page)).toBeVisible();
+  await expect(page.locator("#clueList")).toBeVisible();
+  await expect(page.locator("#suspectList")).toBeHidden();
+  await expect(page.locator("#cluesTab")).toHaveClass(/\bon\b/);
   await expect(page.locator("#clueList li")).toHaveText(game.clues.map(c => c.text));
+
+  await page.locator("#suspectsTab").click();
+  await expect(page.locator("#suspectList")).toBeVisible();
+  await expect(page.locator("#clueList")).toBeHidden();
   await expect(page.locator("#suspectList li strong")).toHaveText(game.suspects.map(s => s.name));
   await expect(page.locator("#suspectList li span")).toHaveText(game.suspects.filter(s => s.blurb).map(s => s.blurb));
-  await expect(reveal(page).locator("button, input, select")).toHaveCount(0);   // nothing to pick: no accusation here
+
+  await expect(reveal(page).locator("input, select")).toHaveCount(0);           // nothing to pick: no accusation here
+  await expect(reveal(page).locator("button")).toHaveText(["Clues", "Suspects"]);
+  await page.locator("#cluesTab").click();                                      // back as we found it
 }
 async function arriveAtTemple(app) {
   for (const p of route.approach) await app.fix(p);
@@ -129,4 +141,24 @@ test("once shown, the clues stay even if a re-uploaded game moves the reveal lat
   await app.open({ file: "play", html });
   await page.locator("#startBtn").click();
   await expectClues(page);
+});
+
+test("the lists sit still: the once-a-second check doesn't rebuild them (pictures would flicker)", async ({ app, page }) => {
+  await app.open({ file: "play" });
+  await app.begin(far(GAME.locations));
+  // Skip to the clues by ageing this phone's start time, then reload into them.
+  await page.evaluate(min => {
+    const k = "chinatown-hunt:chinatown-historical-hunt", d = JSON.parse(localStorage.getItem(k));
+    d.startedAt = Date.now() - min * 60_000;
+    localStorage.setItem(k, JSON.stringify(d));
+  }, GAME.durationMinutes - GAME.revealMinutes + 1);
+  await page.reload();
+  await page.locator("#startBtn").click();
+  await expect(reveal(page)).toBeVisible();
+
+  // Mark the first clue, wait past two of the once-a-second checks, and see that the same element is still there.
+  await page.locator("#clueList li").first().evaluate(el => { el.dataset.marked = "1"; });
+  await page.waitForTimeout(2_500);
+  await expect(page.locator("#clueList li[data-marked]")).toHaveCount(1);
+  await expect(page.locator("#clueList li")).toHaveCount(GAME.clues.length);
 });

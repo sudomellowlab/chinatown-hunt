@@ -92,6 +92,7 @@ test.describe("on a phone", () => {
     await expect.poll(() => loaded(clueImg)).toBe(true);
     await expect(page.locator("#clueList li").nth(1).locator("figure")).toHaveCount(0);
 
+    await page.locator("#suspectsTab").click();                 // the portraits sit behind the Suspects button
     const tan = page.locator("#suspectList li").first();
     await expect(tan).toHaveClass(/\bwithpic\b/);
     await expect(tan.locator("img")).toHaveAttribute("alt", `Portrait of ${game.suspects[0].name}`);

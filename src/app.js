@@ -375,6 +375,7 @@ setInterval(() => { renderClock(); checkReveal(); }, 1000); renderClock();
 const ui = {
   startScreen: true,     // the admin file turns this off
   revealPreview: false,  // the admin file is previewing the clues screen
+  revealTab: "clues",    // the clues screen shows one list at a time: "clues" or "suspects"
 };
 
 // Tiny element builder; text always goes in as textContent, never as HTML.
@@ -632,18 +633,35 @@ function checkReveal(){
 }
 // ui.revealPreview: the admin file shows the screen without changing the team's progress.
 // It's kept on ui, not passed in, because the once-a-second check redraws this screen too.
+let revealDrawn = null;      // what the lists were last built from, so the once-a-second check doesn't redraw them
 function renderReveal(){
   const show = state.progress.revealed || ui.revealPreview;
   $("reveal").hidden = !show;
   if (!show) return;
   $("revealTitle").textContent = GAME.title;
   $("revealLead").replaceChildren(...linked(GAME.revealIntro));
-  $("clueList").replaceChildren(...(GAME.clues || []).map((c, i) =>
-    h("li", {}, h("p", {}, linked(c.text)), picture(c.image, "clueimg", `Picture for clue ${i + 1}`))));
-  $("suspectList").replaceChildren(...(GAME.suspects || []).map(s =>
-    h("li", { class: s.image ? "withpic" : "" }, picture(s.image, "portrait", `Portrait of ${s.name}`),
-      h("div", { class:"who" }, h("strong", {}, s.name), s.blurb ? h("span", {}, linked(s.blurb)) : null))));
+  // Rebuilding every second would reload every picture, so only build when the content changes
+  // (the admin panel edits it live).
+  const signature = JSON.stringify([GAME.clues, GAME.suspects]);
+  if (signature !== revealDrawn) {
+    revealDrawn = signature;
+    $("clueList").replaceChildren(...(GAME.clues || []).map((c, i) =>
+      h("li", {}, h("p", {}, linked(c.text)), picture(c.image, "clueimg", `Picture for clue ${i + 1}`))));
+    $("suspectList").replaceChildren(...(GAME.suspects || []).map(s =>
+      h("li", { class: s.image ? "withpic" : "" }, picture(s.image, "portrait", `Portrait of ${s.name}`),
+        h("div", { class:"who" }, h("strong", {}, s.name), s.blurb ? h("span", {}, linked(s.blurb)) : null))));
+  }
+  // One list at a time, behind its own button.
+  const clues = ui.revealTab !== "suspects";
+  $("clueList").hidden = !clues;
+  $("suspectList").hidden = clues;
+  for (const [id, on] of [["cluesTab", clues], ["suspectsTab", !clues]]) {
+    $(id).classList.toggle("on", on);
+    $(id).setAttribute("aria-pressed", String(on));
+  }
 }
+for (const [id, tab] of [["cluesTab", "clues"], ["suspectsTab", "suspects"]])
+  $(id).onclick = () => { ui.revealTab = tab; renderReveal(); $("reveal").scrollTop = 0; };
 
 $("override").onclick = e => {
   const id = e.target.dataset.id; if (id) activateLocation(id);
