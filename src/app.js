@@ -429,15 +429,19 @@ function linked(text){
 function fill(el, ...children){ el.replaceChildren(...children.flat().filter(c => c != null && c !== false)); }
 
 /* A challenge's answer, when it has one: a box to type in, or the options to tap.
-   Until it's right, Next (or Finish) stays disabled; a wrong try says so and the team
-   tries again. Right answers are kept in progress, so a reload doesn't ask twice.
+   Two ways of moving on, set per challenge by the organiser:
+     "correct" – Next stays disabled until the answer is right; a wrong try says so.
+     "any"     – any answer they give moves them on, and nothing says whether it was right
+                 (the scoring is LoQuiz's business, not this screen's).
+   What they gave is kept in progress, so a reload doesn't ask twice.
    Challenges without an answer are unchanged: teams answer those in LoQuiz. */
 function answerBlock(task){
   const a = Play.answerOf(task);
   if (!a) return { solved: true, node: null };
+  const anyAnswer = Play.answerMode(task) === "any";
   if (Play.isSolved(state.progress, task))
     return { solved: true, node: h("div", { id:"answerBox", class:"answer solved" },
-      h("p", { class:"answerverdict" }, "Correct"),
+      h("p", { class:"answerverdict" }, anyAnswer ? "Your answer" : "Correct"),
       h("p", { class:"answergiven" }, Play.solvedAnswer(state.progress, task))) };
 
   const msg = h("p", { id:"answerMsg", class:"hint", role:"status" });
@@ -463,7 +467,7 @@ function answerBlock(task){
   return { solved: false, node: h("div", { id:"answerBox", class:"answer" },
     h("label", { class:"answerask", for:"answerInput" }, a.kind === "number" ? "Your answer (a number):" : "Your answer:"),
     input,
-    h("button", { id:"answerCheck", class:"secondary", onclick: check }, "Check"),
+    h("button", { id:"answerCheck", class:"secondary", onclick: check }, anyAnswer ? "Done" : "Check"),
     msg) };
 }
 

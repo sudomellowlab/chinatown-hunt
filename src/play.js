@@ -41,9 +41,16 @@ const Play = {
        { kind:"text",   accept:["apple", "*ple*"] }   patterns: * stands for anything
        { kind:"number", accept:["1844"] }             1,844 and " 1844 " match too
        { kind:"choice", options:[{ id, text, correct }] }
-     Teams must get it right before Next (or Finish) will move them on. Without an
-     `answer` a challenge behaves as before: read it here, answer it in LoQuiz. */
+     and `mode`, which says what it takes to move on:
+       "correct" (the default) – kept until they get it right, trying as often as they like
+       "any"                   – any answer moves them on, and they are never told if it was right
+     Without an `answer` a challenge behaves as before: read it here, answer it in LoQuiz. */
   ANSWER_KINDS: ["text", "number", "choice"],
+  ANSWER_MODES: ["correct", "any"],
+  answerMode(task){
+    const mode = Play.answerOf(task)?.mode;
+    return mode === "any" ? "any" : "correct";
+  },
   // Typed answers are compared ignoring capitals, leading/trailing space and doubled spaces.
   normalizeAnswer(text){ return String(text ?? "").trim().replace(/\s+/g, " ").toLowerCase(); },
   answerOf(task){
@@ -82,9 +89,16 @@ const Play = {
   },
   solvedAnswer(progress, task){ return task ? progress.solved?.[task.id] : undefined; },
   isSolved(progress, task){ return !Play.needsAnswer(task) || Play.solvedAnswer(progress, task) !== undefined; },
-  // Record a right answer. A wrong one leaves progress untouched, so nothing is stored for it.
+  /* Record an answer and let the team move on. In "correct" mode only a right answer counts;
+     in "any" mode anything they actually gave counts, right or wrong, and they aren't told which. */
   solve(progress, task, typed){
-    if (!Play.needsAnswer(task) || !Play.checkAnswer(task, typed)) return progress;
+    if (!Play.needsAnswer(task)) return progress;
+    const given = Play.answerMode(task) === "any"
+      ? Play.answerOf(task).kind === "choice"
+        ? Play.choiceOptions(Play.answerOf(task)).some(o => o.id === typed)
+        : !!String(typed ?? "").trim()
+      : Play.checkAnswer(task, typed);
+    if (!given) return progress;
     const a = Play.answerOf(task);
     const shown = a.kind === "choice"
       ? (Play.choiceOptions(a).find(o => o.id === typed)?.text ?? "")
@@ -319,6 +333,7 @@ const Play = {
     const a = task?.answer;
     if (a == null) return [];
     if (!Play.ANSWER_KINDS.includes(a.kind)) return ["the answer type isn't one this game knows"];
+    if (a.mode != null && !Play.ANSWER_MODES.includes(a.mode)) return ["that isn't a way of moving on this game knows"];
     if (a.kind === "choice") {
       const options = Play.choiceOptions(a);
       const problems = [];

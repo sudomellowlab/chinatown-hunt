@@ -562,9 +562,10 @@ const cleanTask = t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { imag
 function cleanAnswer(answer){
   const a = Play.answerOf({ answer });
   if (!a) return {};
+  const mode = Play.answerMode({ answer: a }) === "any" ? { mode: "any" } : {};
   if (a.kind === "choice")
-    return { answer: { kind: "choice", options: Play.choiceOptions(a).map(o => ({ id: o.id, text: String(o.text ?? "").trim(), ...(o.correct ? { correct: true } : {}) })) } };
-  return { answer: { kind: a.kind, accept: Play.accepted(a) } };
+    return { answer: { kind: "choice", ...mode, options: Play.choiceOptions(a).map(o => ({ id: o.id, text: String(o.text ?? "").trim(), ...(o.correct ? { correct: true } : {}) })) } };
+  return { answer: { kind: a.kind, ...mode, accept: Play.accepted(a) } };
 }
 // The game exactly as it should reach participants: current locations and radii, default engine settings.
 // This is also the draft, so the starting challenge's password is still readable here; Export seals it.
@@ -691,7 +692,8 @@ const selectedLocation = () => GAME.locations.find(l => l.id === capSel.value);
 // What a challenge asks for, for the lists: "text answer", "number answer", "multiple choice".
 function answerLabel(task){
   const a = Play.answerOf(task);
-  return a ? (a.kind === "choice" ? "multiple choice" : `${a.kind} answer`) : "";
+  if (!a) return "";
+  return (a.kind === "choice" ? "multiple choice" : `${a.kind} answer`) + (Play.answerMode(task) === "any" ? ", any answer" : "");
 }
 function renderTasks(){
   const l = selectedLocation(); if (!l) return;
@@ -746,6 +748,12 @@ function deleteTask(l, i){
    location challenge form and by the starting challenge's list. It edits `task` in
    place and calls `changed` after every keystroke, so the caller can save the draft. */
 const ANSWER_LABELS = [["", "No answer here (teams answer in LoQuiz)"], ["text", "Text answer"], ["number", "Number answer"], ["choice", "Multiple choice"]];
+// What it takes to move on from a challenge that asks for an answer.
+const ANSWER_MODE_LABELS = [["correct", "Kept until correct"], ["any", "Move on, right or wrong"]];
+const ANSWER_MODE_HELP = {
+  correct: "Next stays locked until the team gets it right. A wrong try says \"Not quite. Try again.\"",
+  any: "Any answer lets the team move on, and they're never told whether it was right. They still have to answer something.",
+};
 const ACCEPT_HELP = {
   text: "One accepted answer per line. * stands for anything: *ple* accepts any answer containing \"ple\", ple* one starting with it. Capitals and extra spaces don't matter.",
   number: "One accepted number per line. 1844, 1,844 and \" 1844 \" all match.",
@@ -766,6 +774,20 @@ function answerEditor(task, changed){
     body.replaceChildren();
     const a = Play.answerOf(task);
     if (!a) return;
+    // How the team moves on: kept until correct, or any answer will do.
+    const mode = document.createElement("select");
+    mode.className = "answermode";
+    mode.setAttribute("aria-label", "Moving on");
+    mode.append(...ANSWER_MODE_LABELS.map(([v, label]) => new Option(label, v)));
+    mode.value = Play.answerMode(task);
+    const modeNote = Object.assign(document.createElement("div"), { className: "note", textContent: ANSWER_MODE_HELP[mode.value] });
+    mode.onchange = () => {
+      a.mode = mode.value === "any" ? "any" : undefined;
+      if (!a.mode) delete a.mode;
+      modeNote.textContent = ANSWER_MODE_HELP[mode.value];
+      changed();
+    };
+    body.append(mode, modeNote);
     if (a.kind === "choice") {
       const list = document.createElement("ol");
       list.className = "optlist";

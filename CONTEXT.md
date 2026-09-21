@@ -128,7 +128,9 @@ first.
   only what's left to do is shown. The admin panel keeps them, for editing.
 - Challenges: text and an optional picture each, shown one at a time with Back and Next and
   Finish location on the last; the admin editor to add, edit, reorder and delete them.
-- Answers (optional, per challenge): text, number or multiple choice. Teams must get it right
+- Answers (optional, per challenge): text, number or multiple choice, each set to either
+  "Kept until correct" or "Move on, right or wrong" (any answer moves them on, and they're
+  never told whether it was right). Teams must get it right
   here before moving on; wrong tries just say "Not quite. Try again." Text answers may use
   * for "anything" (*ple* accepts any answer containing "ple"), capitals and extra spaces are
   ignored, and several accepted answers can be listed one per line. Numbers ignore commas.
@@ -152,7 +154,7 @@ first.
   and both lists. Teams see two buttons, Clues and Suspects, and read one list at a time; neither is
   chosen until they tap one. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 156 unit tests and 117 browser tests, run by CI on every push.
+- 157 unit tests and 118 browser tests, run by CI on every push.
 
 **Live (17 September 2026)**
 - Real content is in: 9 locations, 60 challenges (49 with pictures on

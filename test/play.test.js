@@ -522,6 +522,34 @@ describe("answers on a challenge", () => {
     assert.deepEqual(sealed.solved, { unknown: "kept" });
   });
 
+  test("\"move on, right or wrong\": any answer counts, and nothing says which it was", () => {
+    const loose = ask({ kind: "text", accept: ["apple"], mode: "any" }, "q4");
+    assert.equal(Play.answerMode(loose), "any");
+    assert.equal(Play.answerMode(text), "correct", "kept until correct unless the organiser says otherwise");
+    assert.equal(Play.answerMode(ask({ kind: "text", accept: ["a"], mode: "nonsense" })), "correct");
+
+    let p = Play.solve(Play.emptyProgress(), loose, "durian");
+    assert.equal(Play.isSolved(p, loose), true, "a wrong answer still moves them on");
+    assert.equal(p.solved.q4, "durian", "what they gave is kept, right or wrong");
+    assert.equal(Play.checkAnswer(loose, "durian"), false, "the right answer is still known; the team just isn't told");
+
+    // Something has to be given, though.
+    const blank = Play.emptyProgress();
+    for (const nothing of ["", "   ", null]) assert.equal(Play.solve(blank, loose, nothing), blank, JSON.stringify(nothing));
+
+    // Multiple choice: any option they tap, but it has to be one of them.
+    const pick = ask({ kind: "choice", mode: "any", options: [{ id: "o1", text: "Apple" }, { id: "o2", text: "Pear", correct: true }] }, "q5");
+    assert.equal(Play.solve(blank, pick, "o1").solved.q5, "Apple");
+    assert.equal(Play.solve(blank, pick, "made-up"), blank);
+
+    // It still gates Next until they answer.
+    const withLoose = { id: "quiz2", name: "Loose stop", ...at, tasks: [loose, t1] };
+    let q = Play.next(Play.activate(Play.emptyProgress(), "quiz2"), withLoose);
+    assert.equal(Play.canAdvance(withLoose, q), false);
+    q = Play.solve(q, loose, "anything");
+    assert.equal(Play.canAdvance(withLoose, q), true);
+  });
+
   test("an answer must be complete before the game can be exported", () => {
     assert.deepEqual(Play.answerProblems(t1), []);
     assert.deepEqual(Play.answerProblems(ask({ kind: "text", accept: [] })), ["write the answer teams must give"]);
@@ -532,6 +560,8 @@ describe("answers on a challenge", () => {
     assert.deepEqual(Play.answerProblems(ask({ kind: "choice", options: [{ id: "o1", text: "One" }, { id: "o2", text: " " }] })),
       ["one of the options is empty", "mark the correct option"]);
     assert.deepEqual(Play.answerProblems(ask({ kind: "riddle", accept: ["x"] })), ["the answer type isn't one this game knows"]);
+    assert.deepEqual(Play.answerProblems(ask({ kind: "text", accept: ["x"], mode: "maybe" })), ["that isn't a way of moving on this game knows"]);
+    assert.deepEqual(Play.answerProblems(ask({ kind: "text", accept: ["x"], mode: "any" })), []);
     assert.deepEqual(Play.validateTask(ask({ kind: "number", accept: [] })), ["write the answer teams must give"]);
     assert.deepEqual(Play.validateGame({ ...quizGame, locations: [{ ...withAnswers, tasks: [ask({ kind: "number", accept: ["x"] })] }] })
       .filter(l => l.includes("challenge 1")), ['Quiz stop, challenge 1: the answer "x" isn\'t a number']);

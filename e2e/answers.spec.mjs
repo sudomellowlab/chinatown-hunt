@@ -11,7 +11,7 @@ const route = pickArrival([THK, ...GAME.locations.filter(l => l !== THK)]);
 // Set the answer on challenge `n` of the selected location, through the admin panel.
 async function setAnswer(page, n, kind, fill) {
   await page.locator("#taskList li").nth(n).locator(".tedit").click();
-  await page.locator("#tfAnswer select").selectOption(kind);
+  await page.locator("#tfAnswer select.answerkind").selectOption(kind);
   await fill();
   await page.locator("#tfSave").click();
   await expect(page.locator("#taskForm")).toBeHidden();
@@ -135,13 +135,13 @@ test("an incomplete answer can't be saved, and blocks export if it slips through
   await page.locator("#capTarget").selectOption(THK.id);
 
   await page.locator("#taskList li").first().locator(".tedit").click();
-  await page.locator("#tfAnswer select").selectOption("choice");
+  await page.locator("#tfAnswer select.answerkind").selectOption("choice");
   await page.locator("#tfSave").click();
   await expect(page.locator("#tfErrors")).toContainText("one of the options is empty");
   await expect(page.locator("#tfErrors")).toContainText("mark the correct option");
   await expect(page.locator("#taskForm")).toBeVisible();
 
-  await page.locator("#tfAnswer select").selectOption("number");
+  await page.locator("#tfAnswer select.answerkind").selectOption("number");
   await page.locator("#tfAnswer textarea").fill("about 1844");
   await page.locator("#tfSave").click();
   await expect(page.locator("#tfErrors")).toContainText('the answer "about 1844" isn\'t a number');
@@ -150,4 +150,48 @@ test("an incomplete answer can't be saved, and blocks export if it slips through
   await page.locator("#tfSave").click();
   await expect(page.locator("#taskForm")).toBeHidden();
   await expect(page.locator("#exportGame")).toBeEnabled();
+});
+
+test("\"move on, right or wrong\": a wrong answer still moves the team on, with no verdict", async ({ app, page, browser }) => {
+  await app.open();
+  await app.openTools();
+  await page.locator("#capTarget").selectOption(THK.id);
+
+  // Challenge 1: any answer will do. Challenge 2: kept until correct, for contrast.
+  await setAnswer(page, 0, "text", async () => {
+    await page.locator("#tfAnswer textarea").fill("lotus");
+    await page.locator("#tfAnswer select.answermode").selectOption("any");
+  });
+  await setAnswer(page, 1, "number", () => page.locator("#tfAnswer textarea").fill("1844"));
+  await expect(page.locator("#taskList li").nth(0).locator(".tpts")).toContainText("text answer, any answer");
+  await expect(page.locator("#taskList li").nth(1).locator(".tpts")).not.toContainText("any answer");
+
+  const html = await exportGame(page);
+  await atTheTemple(browser, html, async (phone) => {
+    await phone.locator("#nextBtn").click();
+
+    // A wrong answer is taken as given: Next unlocks and nothing says it was wrong.
+    await expect(phone.locator("#nextBtn")).toBeDisabled();
+    await phone.locator("#answerCheck").click();                       // nothing typed yet
+    await expect(phone.locator("#answerMsg")).toHaveText("Type your answer first.");
+    await expect(phone.locator("#nextBtn")).toBeDisabled();
+    await phone.locator("#answerInput").fill("a wrong answer");
+    await phone.locator("#answerCheck").click();
+    await expect(phone.locator("#answerBox")).toHaveClass(/solved/);
+    await expect(phone.locator("#answerBox")).toContainText("a wrong answer");
+    await expect(phone.locator("#answerBox")).toContainText("Your answer");
+    await expect(phone.locator("#sheet")).not.toContainText(/correct|not quite|wrong answer given/i);
+    await expect(phone.locator("#nextBtn")).toBeEnabled();
+    await phone.locator("#nextBtn").click();
+
+    // The next one is the ordinary kind: it holds them until they're right.
+    await phone.locator("#answerInput").fill("1799");
+    await phone.locator("#answerCheck").click();
+    await expect(phone.locator("#answerMsg")).toHaveText("Not quite. Try again.");
+    await expect(phone.locator("#nextBtn")).toBeDisabled();
+    await phone.locator("#answerInput").fill("1844");
+    await phone.locator("#answerCheck").click();
+    await expect(phone.locator("#answerBox")).toContainText("Correct");
+    await expect(phone.locator("#nextBtn")).toBeEnabled();
+  });
 });
