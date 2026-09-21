@@ -87,6 +87,7 @@ test.describe("on a phone", () => {
     await page.clock.fastForward((game.durationMinutes - game.revealMinutes) * MIN + 1_000);
     await expect(page.locator("#reveal")).toBeVisible();
 
+    await page.locator("#cluesTab").click();                    // the clues sit behind their own button
     const clueImg = page.locator("#clueList li").first().locator("img");
     await expect(clueImg).toHaveAttribute("src", `${IMG}/hunt/ledger.png`);
     await expect.poll(() => loaded(clueImg)).toBe(true);

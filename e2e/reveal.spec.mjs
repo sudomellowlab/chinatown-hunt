@@ -12,10 +12,16 @@ const THK = GAME.locations.find(l => l.id === "thian-hock-keng");
 const route = pickArrival([THK, ...GAME.locations.filter(l => l !== THK)]);
 
 const reveal = page => page.locator("#reveal");
-/* The screen opens on the clues, with the suspects one tap away; the only things to tap are
-   those two buttons (there is no accusation here). */
+/* The screen opens on two buttons and neither list: the team picks. The buttons are the only
+   things to tap (there is no accusation here). */
 async function expectClues(page, game = GAME) {
   await expect(reveal(page)).toBeVisible();
+  await expect(page.locator("#clueList")).toBeHidden();
+  await expect(page.locator("#suspectList")).toBeHidden();
+  await expect(page.locator("#cluesTab, #suspectsTab")).toHaveCount(2);
+  await expect(page.locator(".revealtabs button.on")).toHaveCount(0);
+
+  await page.locator("#cluesTab").click();
   await expect(page.locator("#clueList")).toBeVisible();
   await expect(page.locator("#suspectList")).toBeHidden();
   await expect(page.locator("#cluesTab")).toHaveClass(/\bon\b/);
@@ -29,7 +35,6 @@ async function expectClues(page, game = GAME) {
 
   await expect(reveal(page).locator("input, select")).toHaveCount(0);           // nothing to pick: no accusation here
   await expect(reveal(page).locator("button")).toHaveText(["Clues", "Suspects"]);
-  await page.locator("#cluesTab").click();                                      // back as we found it
 }
 async function arriveAtTemple(app) {
   for (const p of route.approach) await app.fix(p);
@@ -157,6 +162,7 @@ test("the lists sit still: the once-a-second check doesn't rebuild them (picture
   await expect(reveal(page)).toBeVisible();
 
   // Mark the first clue, wait past two of the once-a-second checks, and see that the same element is still there.
+  await page.locator("#cluesTab").click();
   await page.locator("#clueList li").first().evaluate(el => { el.dataset.marked = "1"; });
   await page.waitForTimeout(2_500);
   await expect(page.locator("#clueList li[data-marked]")).toHaveCount(1);

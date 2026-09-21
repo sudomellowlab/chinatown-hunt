@@ -375,7 +375,7 @@ setInterval(() => { renderClock(); checkReveal(); }, 1000); renderClock();
 const ui = {
   startScreen: true,     // the admin file turns this off
   revealPreview: false,  // the admin file is previewing the clues screen
-  revealTab: "clues",    // the clues screen shows one list at a time: "clues" or "suspects"
+  revealTab: null,       // which list the clues screen is showing: "clues", "suspects", or neither until the team picks
 };
 
 // Tiny element builder; text always goes in as textContent, never as HTML.
@@ -651,11 +651,11 @@ function renderReveal(){
       h("li", { class: s.image ? "withpic" : "" }, picture(s.image, "portrait", `Portrait of ${s.name}`),
         h("div", { class:"who" }, h("strong", {}, s.name), s.blurb ? h("span", {}, linked(s.blurb)) : null))));
   }
-  // One list at a time, behind its own button.
-  const clues = ui.revealTab !== "suspects";
+  // One list at a time, behind its own button, and neither until the team picks one.
+  const clues = ui.revealTab === "clues", suspects = ui.revealTab === "suspects";
   $("clueList").hidden = !clues;
-  $("suspectList").hidden = clues;
-  for (const [id, on] of [["cluesTab", clues], ["suspectsTab", !clues]]) {
+  $("suspectList").hidden = !suspects;
+  for (const [id, on] of [["cluesTab", clues], ["suspectsTab", suspects]]) {
     $(id).classList.toggle("on", on);
     $(id).setAttribute("aria-pressed", String(on));
   }

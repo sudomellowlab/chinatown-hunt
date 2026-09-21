@@ -149,7 +149,8 @@ first.
   `https://` address on your own server. **Check image links** in the admin panel tests them
   all. Phones download every picture when the team taps Begin.
 - Clues & suspects: you set the game length, how many minutes before the end they appear,
-  and both lists. Teams see two buttons, Clues and Suspects, and read one list at a time. At that point no new location can open (a team mid-location finishes it
+  and both lists. Teams see two buttons, Clues and Suspects, and read one list at a time; neither is
+  chosen until they tap one. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
 - 156 unit tests and 117 browser tests, run by CI on every push.
 
