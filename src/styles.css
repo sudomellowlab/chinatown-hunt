@@ -339,3 +339,21 @@ a.textlink::after{content:" ↗";font-size:.8em;text-decoration:none;display:inl
 .answered .optlist .optright{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--slate);white-space:nowrap}
 .answered .optlist .optright input{width:auto;min-height:0}
 .answered select.answermode{width:100%;margin:6px 0 0}
+
+/* ---------- a document a challenge hands out, page by page ---------- */
+#docBtn{width:100%;margin-top:10px}
+#doc{position:fixed;inset:0;z-index:900;background:var(--ink);display:flex;flex-direction:column;overscroll-behavior:contain}
+#doc[hidden]{display:none}
+#doc header{display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;
+  background:var(--ink);color:var(--sheet);font-size:15px}
+#doc #docTitle{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#doc header button{background:transparent;border:1px solid var(--sheet);color:var(--sheet);padding:8px 14px;font-size:14px;min-height:40px}
+#docPage{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;background:var(--ink);text-align:center}
+#docPage img{display:block;margin:0 auto;width:100%;height:auto}
+#docPage.zoom img{width:200%;max-width:none}
+#docPage .picfail{color:var(--sheet);padding:22px 16px}
+#docNav{display:flex;align-items:center;gap:8px;padding:8px 12px calc(env(safe-area-inset-bottom) + 10px);background:var(--ink)}
+#docNav button{flex:0 0 22%;min-height:46px;border:1px solid var(--sheet);background:transparent;color:var(--sheet);font-size:18px}
+#docNav button:disabled{opacity:.35}
+#docNav select{flex:1;min-width:0;min-height:46px;border:1px solid var(--sheet);background:var(--ink);color:var(--sheet);
+  font-family:var(--serif);font-size:15px;text-align:center}

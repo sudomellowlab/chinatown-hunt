@@ -91,6 +91,19 @@ body.preview #sheet{padding-top:62px}
   </div>
 </div>
 
+<div id="doc" hidden>
+  <header>
+    <span id="docTitle"></span>
+    <button type="button" id="docClose">Close</button>
+  </header>
+  <div id="docPage"></div>
+  <div id="docNav">
+    <button type="button" id="docPrev" aria-label="Previous page">←</button>
+    <select id="docJump" aria-label="Go to page"></select>
+    <button type="button" id="docNext" aria-label="Next page">→</button>
+  </div>
+</div>
+
 <div id="start" hidden>
   <div class="startcard">
     <div class="rule"></div>
@@ -202,6 +215,10 @@ body.preview #sheet{padding-top:62px}
       <label class="stack">Image link <span class="note inline">optional, https:// on your server</span>
         <input type="text" id="tfImage" class="imglink" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/picture.jpg"></label>
       <div class="imgprev" id="tfImagePrev"></div>
+      <label class="stack">Document <span class="note inline">optional: a handout teams read in the game, one picture per page</span>
+        <input type="text" id="tfDocLabel" class="plain" autocomplete="off" placeholder="Button wording, e.g. Open the notebook"></label>
+      <textarea id="tfDocPages" class="prose" rows="3" placeholder="https://…/page-1.jpg&#10;https://…/page-2.jpg"></textarea>
+      <div class="note" id="tfDocInfo"></div>
       <div id="tfAnswer"></div>
       <div class="note bad" id="tfErrors"></div>
       <div class="row"><button class="btn primary" id="tfSave">Save challenge</button><button class="btn" id="tfCancel">Cancel</button></div>

@@ -278,13 +278,44 @@ const Play = {
   },
   // Every image link in the game, once each, in the order they appear.
   imageUrls(game){
+    const tasks = [...(game.start?.tasks || []), ...game.locations.flatMap(l => l.tasks || [])];
     const urls = [
-      ...(game.start?.tasks || []).map(t => t.image),
-      ...game.locations.flatMap(l => (l.tasks || []).map(t => t.image)),
+      ...tasks.flatMap(t => [t.image, ...Play.docPages(t)]),
       ...(game.clues || []).map(c => c.image),
       ...(game.suspects || []).map(s => s.image),
     ].map(u => String(u ?? "").trim()).filter(u => u && !Play.imageProblem(u));
     return [...new Set(urls)];
+  },
+
+  /* ── documents ──
+     A challenge may carry `doc`: a handout (a notebook, a map, a leaflet) as one picture per
+     page, shown in the game itself rather than in another tab.
+       { label?: "Open the notebook", pages: ["https://…/p1.jpg", "https://…/p2.jpg"] }
+     PDFs can't be relied on to show inside a page on a phone, so the organiser exports the
+     pages as pictures and lists them in order. */
+  DOC_LABEL: "Open the document",
+  docOf(task){
+    const d = task?.doc;
+    return d && Play.docPages(task).length ? d : null;
+  },
+  docPages(task){
+    const pages = task?.doc?.pages;
+    return (Array.isArray(pages) ? pages : []).map(p => String(p ?? "").trim()).filter(Boolean);
+  },
+  docLabel(task){ return String(task?.doc?.label ?? "").trim() || Play.DOC_LABEL; },
+  // Problems with a challenge's document, in plain words. No document at all is fine.
+  docProblems(task){
+    const d = task?.doc;
+    if (d == null) return [];
+    const pages = Play.docPages(task);
+    if (!pages.length) return ["the document has no pages: add a picture link for each page"];
+    const problems = [];
+    pages.forEach((p, i) => {
+      const bad = Play.imageProblem(p);
+      if (bad) problems.push(`page ${i + 1} of the document: ${bad}`);
+    });
+    for (const p of Play.linkProblems(d.label)) problems.push(`the document's button: ${p}`);
+    return problems;
   },
 
   /* ── links in text ── */
@@ -325,6 +356,7 @@ const Play = {
     if (img) problems.push(img);
     problems.push(...Play.linkProblems(task.prompt));
     problems.push(...Play.answerProblems(task));
+    problems.push(...Play.docProblems(task));
     return problems;
   },
 

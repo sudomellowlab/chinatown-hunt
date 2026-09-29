@@ -558,7 +558,14 @@ const canExport = PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).length === 2 && PAR
 
 /* A challenge is its text, an optional picture and, when the organiser set one, the answer teams
    must give here. Anything else left over from earlier drafts (points, hints) is dropped. */
-const cleanTask = t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { image: t.image } : {}), ...(cleanAnswer(t.answer)) });
+const cleanTask = t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { image: t.image } : {}), ...(cleanAnswer(t.answer)), ...cleanDoc(t) });
+// A document is its pages in order, with the wording of the button that opens it.
+function cleanDoc(task){
+  const pages = Play.docPages(task);
+  if (!pages.length) return {};
+  const label = String(task.doc?.label ?? "").trim();
+  return { doc: { ...(label ? { label } : {}), pages } };
+}
 function cleanAnswer(answer){
   const a = Play.answerOf({ answer });
   if (!a) return {};
@@ -709,7 +716,9 @@ function renderTasks(){
     li.innerHTML = `<div class="tsum"><span class="tnum"></span><span class="tpts"></span></div><div class="tprompt"></div><div class="tprob"></div>
       <div class="tbtns"><button class="btn tup" title="Move up">↑</button><button class="btn tdown" title="Move down">↓</button><button class="btn tedit">Edit</button><button class="btn warn tdel">Delete</button></div>`;
     li.querySelector(".tnum").textContent = i + 1;
-    li.querySelector(".tpts").textContent = [t.image && "image", answerLabel(t)].filter(Boolean).join(" · ");
+    const pages = Play.docPages(t).length;
+    li.querySelector(".tpts").textContent = [t.image && "image", pages && `document, ${pages} page${pages === 1 ? "" : "s"}`, answerLabel(t)]
+      .filter(Boolean).join(" · ");
     li.querySelector(".tprompt").textContent = t.prompt || (t.image ? "(picture only)" : "(empty)");
     li.querySelector(".tprob").textContent = problems.join(" · ");
     li.querySelector(".tup").disabled = i === 0;
@@ -835,6 +844,9 @@ function openTaskForm(l, index){
   $("tfPrompt").value = t.prompt || "";
   $("tfImage").value = t.image || "";
   showImagePreview($("tfImagePrev"), t.image);
+  $("tfDocLabel").value = t.doc?.label || "";
+  $("tfDocPages").value = Play.docPages(t).join("\n");
+  renderDocInfo();
   // The answer is edited on the copy; Save puts it into the game with the rest.
   $("tfAnswer").replaceChildren(answerEditor(t, () => { $("tfErrors").textContent = ""; }));
   $("tfErrors").textContent = "";
@@ -850,8 +862,22 @@ function readTaskForm(){
   const t = { prompt: $("tfPrompt").value.trim() };
   const image = $("tfImage").value.trim();
   if (image) t.image = image;
-  return { ...t, ...cleanAnswer(editing?.task?.answer) };
+  return { ...t, ...cleanAnswer(editing?.task?.answer), ...cleanDoc(docFromForm()) };
 }
+// The document as the form has it: the pages typed one per line, and the button's wording.
+function docFromForm(){
+  return { doc: { label: $("tfDocLabel").value, pages: $("tfDocPages").value.split("\n") } };
+}
+function renderDocInfo(){
+  const task = docFromForm(), pages = Play.docPages(task), problems = Play.docProblems(task);
+  const info = $("tfDocInfo");
+  info.textContent = !pages.length
+    ? "No document. Paste one picture link per line, in page order, to give teams a handout they can read without leaving the game."
+    : problems.length ? problems.map(p => "• " + p).join("\n")
+    : `${pages.length} page${pages.length === 1 ? "" : "s"}. Teams tap "${Play.docLabel(task)}" and read it in the game, page by page.`;
+  info.classList.toggle("bad", problems.length > 0);
+}
+for (const id of ["tfDocLabel", "tfDocPages"]) $(id).addEventListener("input", renderDocInfo);
 
 $("tfImage").addEventListener("input", e => showImagePreview($("tfImagePrev"), e.target.value));
 $("taskAdd").onclick = () => { const l = selectedLocation(); if (l) openTaskForm(l, -1); };
@@ -865,6 +891,7 @@ $("tfSave").onclick = () => {
   if (editing.index >= 0) l.tasks[editing.index] = { id: l.tasks[editing.index].id, ...t };   // fields from older versions are dropped
   else l.tasks.push({ id: Play.newTaskId(GAME), ...t });
   closeTaskForm(); saveDraft(); renderTasks();
+  renderSheet();      // a location open for testing shows the edit at once
 };
 
 /* ════════════════════════════════════════════════════════════════════
@@ -1127,7 +1154,14 @@ function loads(url, timeout = 15000){
 // Where each link is used, for the report: "Thian Hock Keng Temple, challenge 2", "Clue 3", "Suspect: Tan Boon Seng".
 function imageUses(){
   const uses = [];
-  for (const l of GAME.locations) (l.tasks || []).forEach((t, i) => t.image && uses.push({ url: t.image.trim(), where: `${l.name}, challenge ${i + 1}` }));
+  for (const l of GAME.locations) (l.tasks || []).forEach((t, i) => {
+    if (t.image) uses.push({ url: t.image.trim(), where: `${l.name}, challenge ${i + 1}` });
+    Play.docPages(t).forEach((p, n) => uses.push({ url: p, where: `${l.name}, challenge ${i + 1}, document page ${n + 1}` }));
+  });
+  (GAME.start?.tasks || []).forEach((t, i) => {
+    if (t.image) uses.push({ url: t.image.trim(), where: `Starting challenge ${i + 1}` });
+    Play.docPages(t).forEach((p, n) => uses.push({ url: p, where: `Starting challenge ${i + 1}, document page ${n + 1}` }));
+  });
   (GAME.clues || []).forEach((c, i) => c.image && uses.push({ url: c.image.trim(), where: `Clue ${i + 1}` }));
   (GAME.suspects || []).forEach(s => s.image && uses.push({ url: s.image.trim(), where: `Suspect: ${s.name || "(no name)"}` }));
   return uses.filter(u => u.url && !Play.imageProblem(u.url));

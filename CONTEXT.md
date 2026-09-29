@@ -128,6 +128,10 @@ first.
   only what's left to do is shown. The admin panel keeps them, for editing.
 - Challenges: text and an optional picture each, shown one at a time with Back and Next and
   Finish location on the last; the admin editor to add, edit, reorder and delete them.
+- Documents (optional, per challenge): a handout teams read in the game, one picture per page
+  (export each PDF page as a JPG and list the links in order). A button opens it over the
+  challenge; page buttons, a Page N of M list, swipe and tap-to-zoom; Close returns to the
+  question. PDFs themselves can't be shown inside a page on a phone, which is why it's pictures.
 - Answers (optional, per challenge): text, number or multiple choice, each set to either
   "Kept until correct" or "Move on, right or wrong" (any answer moves them on, and they're
   never told whether it was right). Teams must get it right
@@ -154,7 +158,7 @@ first.
   and both lists. Teams see two buttons, Clues and Suspects, and read one list at a time; neither is
   chosen until they tap one. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 157 unit tests and 118 browser tests, run by CI on every push.
+- 162 unit tests and 122 browser tests, run by CI on every push.
 
 **Live (17 September 2026)**
 - Real content is in: 9 locations, 60 challenges (49 with pictures on

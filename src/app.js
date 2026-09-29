@@ -428,6 +428,65 @@ function linked(text){
 // replaceChildren prints null as the text "null"; this skips anything that isn't there.
 function fill(el, ...children){ el.replaceChildren(...children.flat().filter(c => c != null && c !== false)); }
 
+/* ════════════════════════════════════════════════════════════════════
+   DOCUMENTS — a handout (a notebook, a leaflet) shown in the game itself,
+   one picture per page, instead of a PDF in another tab. It opens over the
+   challenge and closes back to it; nothing about progress changes.
+   ════════════════════════════════════════════════════════════════════ */
+const doc = { pages: [], at: 0, taskId: null };
+function openDoc(task){
+  doc.pages = Play.docPages(task);
+  doc.at = 0;
+  doc.taskId = task.id;
+  if (!doc.pages.length) return;
+  $("docTitle").textContent = Play.docLabel(task).replace(/^open (the )?/i, "") || "Document";
+  $("docJump").replaceChildren(...doc.pages.map((p, i) => new Option(`Page ${i + 1} of ${doc.pages.length}`, String(i))));
+  $("doc").hidden = false;
+  showDocPage(0);
+}
+function closeDoc(){ $("doc").hidden = true; doc.taskId = null; $("docPage").replaceChildren(); }
+/* A document belongs to one challenge: it closes by itself if the team ends up anywhere else
+   (the next challenge, the map, or the clues screen taking over on the clock). */
+function docBelongsTo(taskId){ if (!$("doc").hidden && doc.taskId !== taskId) closeDoc(); }
+function showDocPage(i){
+  doc.at = Math.max(0, Math.min(i, doc.pages.length - 1));
+  const page = picture(doc.pages[doc.at], "docimg", `Page ${doc.at + 1}`);
+  fill($("docPage"), page);
+  $("docPage").classList.remove("zoom");
+  $("docPage").scrollTop = 0; $("docPage").scrollLeft = 0;
+  // Tapping the page switches between fitting the width and twice that, for the small print.
+  page?.addEventListener("click", () => $("docPage").classList.toggle("zoom"));
+  $("docJump").value = String(doc.at);
+  $("docPrev").disabled = doc.at === 0;
+  $("docNext").disabled = doc.at === doc.pages.length - 1;
+  // Fetch the neighbouring pages so turning the page is instant.
+  for (const near of [doc.at + 1, doc.at - 1]) if (doc.pages[near]) new Image().src = doc.pages[near];
+}
+$("docClose").onclick = closeDoc;
+$("docPrev").onclick = () => showDocPage(doc.at - 1);
+$("docNext").onclick = () => showDocPage(doc.at + 1);
+$("docJump").onchange = e => showDocPage(Number(e.target.value));
+document.addEventListener("keydown", e => {
+  if ($("doc").hidden) return;
+  if (e.key === "Escape") closeDoc();
+  if (e.key === "ArrowLeft") showDocPage(doc.at - 1);
+  if (e.key === "ArrowRight") showDocPage(doc.at + 1);
+});
+// Swiping the page turns it, unless the page is zoomed in (then the swipe pans it).
+let swipeFrom = null;
+$("docPage").addEventListener("touchstart", e => { swipeFrom = e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true });
+$("docPage").addEventListener("touchend", e => {
+  if (swipeFrom == null || $("docPage").classList.contains("zoom")) return;
+  const dx = (e.changedTouches[0]?.clientX ?? swipeFrom) - swipeFrom;
+  if (Math.abs(dx) > 60) showDocPage(doc.at + (dx < 0 ? 1 : -1));
+  swipeFrom = null;
+}, { passive: true });
+
+// The button that opens a challenge's document, when it has one.
+function docButton(task){
+  return Play.docOf(task) ? h("button", { id:"docBtn", class:"secondary", onclick: () => openDoc(task) }, Play.docLabel(task)) : null;
+}
+
 /* A challenge's answer, when it has one: a box to type in, or the options to tap.
    Two ways of moving on, set per challenge by the organiser:
      "correct" – Next stays disabled until the answer is right; a wrong try says so.
@@ -474,8 +533,9 @@ function answerBlock(task){
 function renderSheet(){
   if (GAME.start && Play.startPending(state.progress)) return renderStartChallenge();
   const l = state.progress.active && locationById(state.progress.active);
-  if (!l) { $("sheet").classList.remove("up"); return; }
+  if (!l) { $("sheet").classList.remove("up"); docBelongsTo(null); return; }
   const stage = Play.stage(l, state.progress);
+  docBelongsTo(stage.kind === "task" ? stage.task.id : null);
   const body = $("stage");
   $("sheetname").textContent = l.name;
 
@@ -501,6 +561,7 @@ function renderSheet(){
       closingNote,
       picture(task.image, "qimg", "Picture for this challenge"),
       task.prompt ? h("p", { id:"prompt", class:"prompt" }, linked(task.prompt)) : null,
+      docButton(task),
       answer.node,
       h("div", { class:"navrow" },
         h("button", { id:"backBtn", class:"secondary", onclick: () => move(Play.back) }, "Back"),
@@ -578,6 +639,7 @@ function renderStartChallenge(){
     /* No screen of its own: the password leads straight to the first challenge. Any text the
        organiser wrote sits above that first one. */
     const l = Play.startAsLocation(s), stage = Play.startStage(s, state.progress);
+    docBelongsTo(stage.kind === "task" ? stage.task.id : null);
     const move = fn => { state.progress = fn(state.progress, l); save(); renderSheet(); $("sheet").scrollTop = 0; };
     const finish = h("button", { id:"finishBtn", class:"primary", onclick: finishStart }, "Finish and go to the map");
     if (stage.kind === "none") {
@@ -590,6 +652,7 @@ function renderStartChallenge(){
         index === 0 && s.arrivalText ? h("p", { id:"sheettext" }, linked(s.arrivalText)) : null,
         picture(task.image, "qimg", "Picture for this challenge"),
         task.prompt ? h("p", { id:"prompt", class:"prompt" }, linked(task.prompt)) : null,
+        docButton(task),
         answer.node,
         h("div", { class:"navrow" },
           index > 0 ? h("button", { id:"backBtn", class:"secondary", onclick: () => move(Play.back) }, "Back") : null,
@@ -642,6 +705,7 @@ function renderReveal(){
   const show = state.progress.revealed || ui.revealPreview;
   $("reveal").hidden = !show;
   if (!show) return;
+  docBelongsTo(null);                                   // the clues take over from any open document
   $("revealTitle").textContent = GAME.title;
   $("revealLead").replaceChildren(...linked(GAME.revealIntro));
   // Rebuilding every second would reload every picture, so only build when the content changes

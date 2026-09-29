@@ -567,3 +567,46 @@ describe("answers on a challenge", () => {
       .filter(l => l.includes("challenge 1")), ['Quiz stop, challenge 1: the answer "x" isn\'t a number']);
   });
 });
+
+describe("a document on a challenge", () => {
+  const pages = ["https://a.sg/p1.jpg", "https://a.sg/p2.jpg", "https://a.sg/p3.jpg"];
+  const withDoc = { id: "d1", prompt: "Read it", doc: { label: "Open the notebook", pages } };
+
+  test("pages are listed in order, blanks dropped", () => {
+    assert.deepEqual(Play.docPages(withDoc), pages);
+    assert.deepEqual(Play.docPages({ doc: { pages: [" https://a.sg/p1.jpg ", "", "  "] } }), ["https://a.sg/p1.jpg"]);
+    assert.deepEqual(Play.docPages(t1), []);
+    assert.deepEqual(Play.docPages({ doc: { pages: "not a list" } }), []);
+  });
+
+  test("a challenge without a document is unchanged", () => {
+    assert.equal(Play.docOf(t1), null);
+    assert.equal(Play.docOf({ doc: { pages: [] } }), null, "a document with no pages is no document");
+    assert.deepEqual(Play.docProblems(t1), []);
+  });
+
+  test("the button says what the organiser wrote, or a plain default", () => {
+    assert.equal(Play.docLabel(withDoc), "Open the notebook");
+    assert.equal(Play.docLabel({ doc: { pages } }), Play.DOC_LABEL);
+    assert.equal(Play.docLabel({ doc: { label: "   ", pages } }), Play.DOC_LABEL);
+  });
+
+  test("every page must be an https picture link, and there must be at least one", () => {
+    assert.deepEqual(Play.docProblems(withDoc), []);
+    assert.deepEqual(Play.docProblems({ doc: { pages: [] } }), ["the document has no pages: add a picture link for each page"]);
+    assert.deepEqual(Play.docProblems({ doc: { pages: ["https://a.sg/1.jpg", "http://a.sg/2.jpg"] } }),
+      ["page 2 of the document: the image link must start with https:// (phones block http images)"]);
+    assert.deepEqual(Play.docProblems({ doc: { pages: ["not a link"] } }),
+      ["page 1 of the document: the image link isn't a web address"]);
+    assert.deepEqual(Play.validateTask(withDoc), []);
+    assert.deepEqual(Play.validateTask({ prompt: "x", doc: { pages: ["nope"] } }),
+      ["page 1 of the document: the image link isn't a web address"]);
+  });
+
+  test("its pages are among the pictures the game preloads, once each", () => {
+    const g = { ...game, locations: [{ ...loc, tasks: [t1, withDoc, { id: "d2", prompt: "again", doc: { pages: [pages[0]] } }] }] };
+    const urls = Play.imageUrls(g);
+    for (const p of pages) assert.ok(urls.includes(p), p);
+    assert.equal(urls.filter(u => u === pages[0]).length, 1, "the shared page is listed once");
+  });
+});
