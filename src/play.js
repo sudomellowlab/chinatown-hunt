@@ -127,6 +127,19 @@ const Play = {
   START_LOCK_TEXT: "Your LoQuiz host will give you a password. Type it here to see your first challenge.",
   // The starting challenge as a location for stage/next/back/goTo: its place is kept in at[START].
   startAsLocation(start){ return { id: Play.START, name: start.name, arrivalText: start.arrivalText, tasks: start.tasks || [] }; },
+  /* The other way round: a location the organiser has already built becomes the starting
+     challenge, so they don't have to write one from scratch. Its name, text and challenges come
+     across as they are; the password and password screen wording stay as they were set (the
+     location has none of its own). The caller takes the location off the map. */
+  startFromLocation(location, start){
+    return {
+      name: location.name ?? "",
+      lockText: start?.lockText ?? "",
+      arrivalText: location.arrivalText ?? "",
+      password: start?.password ?? "",
+      tasks: (location.tasks || []).map(t => ({ ...t })),
+    };
+  },
   // Passwords are said aloud and typed on phones: ignore case and extra spaces.
   normalizePassword(text){ return String(text ?? "").trim().replace(/\s+/g, " ").toLowerCase(); },
   // At Begin: a game with a starting challenge locks it until the password is given.

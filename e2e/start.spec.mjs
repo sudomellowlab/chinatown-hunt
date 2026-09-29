@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { devices } from "@playwright/test";
 import { test, expect, createApp, far, pickArrival } from "./fixtures.mjs";
+import { GAME } from "../src/game.js";
 
 const PASSWORD = "Red Lantern";
 const WELCOME = "Welcome to Telok Ayer. Your first tasks are waiting.";
@@ -158,4 +159,76 @@ test("Try it here opens it in the admin file, and it survives a reload", async (
   await page.locator("#startPass").fill(PASSWORD);
   await page.locator("#startPass").press("Enter");
   await expect(page.locator("#sheettext")).toHaveText(WELCOME);
+});
+
+test("a location already built can be made the starting challenge, and leaves the map", async ({ app, page, browser }) => {
+  await app.open();
+  const locs = await app.locations();
+  const thk = locs.find(l => l.id === "thian-hock-keng");     // 3 challenges and arrival text
+  await app.openTools();
+
+  app.expectDialog(`Use ${thk.name} as the starting challenge?\n\nIts 3 challenges move off the map: teams do them at Begin, after typing the password.`, { accept: true });
+  await page.locator("#startFromLoc").selectOption(thk.id);
+  await page.locator("#startUseLoc").click();
+
+  // Its wording and challenges are now the starting challenge's, and it wants a password.
+  await expect(page.locator("#startFields")).toBeVisible();
+  await expect(page.locator("#startPassEdit")).toBeFocused();
+  await expect(page.locator("#startName")).toHaveValue(thk.name);
+  await expect(page.locator("#startTextEdit")).toHaveValue(thk.arrivalText);
+  expect(await startRows(page).locator("textarea").evaluateAll(els => els.map(e => e.value)))
+    .toEqual(GAME.locations.find(l => l.id === thk.id).tasks.map(t => t.prompt));
+  await expect(page.locator("#startInfo")).toContainText("set a password");
+
+  // Its pin is off the map, and it's gone from the location list.
+  await expect(page.locator(".pin")).toHaveCount(locs.length - 1);
+  await expect(page.locator(`.pin[data-id="${thk.id}"]`)).toHaveCount(0);
+  await expect(page.locator("#capTarget option")).toHaveCount(locs.length - 1);
+  await expect(page.locator("#startFromLoc option")).toHaveCount(locs.length - 1);
+  await expect(page.locator("#exportGame")).toBeDisabled();       // no password yet
+
+  await page.locator("#startPassEdit").fill(PASSWORD);
+  await expect(page.locator("#exportGame")).toBeEnabled();
+  const html = await exportGame(page);
+
+  // A phone plays it at Begin: password first, then the location's own challenges.
+  const phone = await browser.newContext({ ...devices["Pixel 7"] });
+  try {
+    const phonePage = await phone.newPage();
+    const { app: player, done } = await createApp({ page: phonePage, context: phone });
+    await player.open({ html, pins: locs.length - 1 });
+    await player.begin(far(locs));
+    await expect(phonePage.locator("#sheetname")).toHaveText(thk.name);
+    await phonePage.locator("#startPass").fill(PASSWORD);
+    await phonePage.locator("#startUnlock").click();
+    await expect(phonePage.locator("#prompt")).toHaveText(GAME.locations.find(l => l.id === thk.id).tasks[0].prompt);
+    await expect(phonePage.locator("#sheettext")).toHaveText(thk.arrivalText);
+    done();
+  } finally {
+    await phone.close();
+  }
+});
+
+test("using a location replaces an existing starting challenge, keeping its password", async ({ app, page }) => {
+  await setUpStart(app, page);
+  const locs = await app.locations();
+  await app.openTools();
+  const loc = locs.find(l => l.id === "nagore-dargah");
+
+  app.expectDialog(`Use ${loc.name} as the starting challenge?\n\nIts ${GAME.locations.find(l => l.id === loc.id).tasks.length} challenges move off the map: teams do them at Begin, after typing the password. The starting challenge you have now is replaced.`, { accept: true });
+  await page.locator("#startFromLoc").selectOption(loc.id);
+  await page.locator("#startUseLoc").click();
+
+  await expect(page.locator("#startName")).toHaveValue(loc.name);
+  await expect(page.locator("#startPassEdit")).toHaveValue(PASSWORD, "the password already set is kept");
+  await expect(page.locator("#startLockEdit")).toHaveValue(LOCK);
+  await expect(page.locator("#startInfo")).toHaveText('Teams type "red lantern" (in any capitals) to open it.');
+  await expect(page.locator(".pin")).toHaveCount(locs.length - 1);
+
+  // Turned down, nothing moves.
+  app.expectDialog(`Use ${locs[0].name} as the starting challenge?\n\nIts ${GAME.locations.find(l => l.id === locs[0].id).tasks.length} challenges move off the map: teams do them at Begin, after typing the password. The starting challenge you have now is replaced.`);
+  await page.locator("#startFromLoc").selectOption(locs[0].id);
+  await page.locator("#startUseLoc").click();
+  await expect(page.locator("#startName")).toHaveValue(loc.name);
+  await expect(page.locator(".pin")).toHaveCount(locs.length - 1);
 });

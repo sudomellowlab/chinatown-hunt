@@ -150,6 +150,11 @@ body.preview #sheet{padding-top:62px}
     <h4>Starting challenge</h4>
     <div class="note">Optional. Opens as soon as a team taps Begin, wherever they are. It asks first for a password that your LoQuiz host gives out, then shows its challenges. No location opens until the team has finished it.</div>
     <div class="row" id="startOff"><button class="btn" id="startAdd">Add a starting challenge</button></div>
+    <div class="row">
+      <select id="startFromLoc" aria-label="Location to use as the starting challenge"></select>
+      <button class="btn" id="startUseLoc">Use this location</button>
+    </div>
+    <div class="note">Uses a location you've already built: its text and challenges become the starting challenge and its pin comes off the map, since teams do it at Begin.</div>
     <div id="startFields" hidden>
       <label class="stack">Heading <input type="text" id="startName" class="plain" autocomplete="off"></label>
       <label class="stack">Password screen text <span class="note inline">shown above the password box; leave empty for the wording shown here</span>

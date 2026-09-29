@@ -610,3 +610,38 @@ describe("a document on a challenge", () => {
     assert.equal(urls.filter(u => u === pages[0]).length, 1, "the shared page is listed once");
   });
 });
+
+describe("a location becoming the starting challenge", () => {
+  const built = { id: "l-x", name: "Telok Ayer Green", lat: 1.28, lng: 103.84, radius: 20,
+    arrivalText: "Stand by the plaque.", tasks: [{ id: "t-a", prompt: "First" }, { id: "t-b", prompt: "Second", image: "https://a.sg/2.jpg" }] };
+
+  test("its name, text and challenges come across as they are", () => {
+    const start = Play.startFromLocation(built, null);
+    assert.equal(start.name, "Telok Ayer Green");
+    assert.equal(start.arrivalText, "Stand by the plaque.");
+    assert.deepEqual(start.tasks, built.tasks);
+    assert.equal(start.password, "", "the organiser still has to set a password");
+    assert.equal(start.lockText, "");
+    // Nothing map-related tags along: a starting challenge needs no position.
+    for (const k of ["id", "lat", "lng", "radius"]) assert.ok(!(k in start), k);
+  });
+
+  test("a password and wording already set are kept", () => {
+    const start = Play.startFromLocation(built, { password: "red lantern", lockText: "Ask your Coordinator.", tasks: [], name: "Old" });
+    assert.equal(start.password, "red lantern");
+    assert.equal(start.lockText, "Ask your Coordinator.");
+    assert.equal(start.name, "Telok Ayer Green", "the location's own heading wins");
+  });
+
+  test("the challenges are copies: editing the start doesn't reach back into the location", () => {
+    const start = Play.startFromLocation(built, null);
+    start.tasks[0].prompt = "Changed";
+    assert.equal(built.tasks[0].prompt, "First");
+  });
+
+  test("what comes across is a valid starting challenge once a password is set", () => {
+    const start = { ...Play.startFromLocation(built, null), password: "red lantern" };
+    const g = { ...game, start, locations: [other, empty] };
+    assert.deepEqual(Play.validateGame(g).filter(l => l.startsWith("Starting challenge")), []);
+  });
+});

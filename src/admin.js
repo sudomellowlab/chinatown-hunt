@@ -445,6 +445,7 @@ function locationsChanged(selectId){
   endPlacing();
   rebuildLocations(); syncPinDragging();
   refreshLocationSelects(selectId);
+  refreshStartFromLoc();
   save(); saveDraft(); renderSheet(); renderPoi(); render();
 }
 $("locAdd").onclick = () => {
@@ -1042,6 +1043,7 @@ const START_FIELDS = [["startName", "name"], ["startLockEdit", "lockText"], ["st
 $("startLockEdit").placeholder = Play.START_LOCK_TEXT;
 function renderStartEditor(){
   const s = GAME.start;
+  refreshStartFromLoc();
   $("startOff").hidden = !!s; $("startFields").hidden = !s;
   if (!s) return;
   for (const [id, key] of START_FIELDS)
@@ -1070,6 +1072,28 @@ for (const [id, key] of START_FIELDS) {
     if (state.progress.start === "open" || (state.progress.start === "locked" && key !== "password")) renderSheet();
   });
 }
+/* Use a location already built as the starting challenge: its text and challenges move across
+   and its pin comes off the map, since the starting challenge needs no position. */
+function refreshStartFromLoc(){
+  const sel = $("startFromLoc"), keep = sel.value;
+  sel.replaceChildren(...GAME.locations.map((l, i) => new Option(`${i + 1}. ${l.name?.trim() || "(unnamed)"}`, l.id)));
+  if (GAME.locations.some(l => l.id === keep)) sel.value = keep;
+  $("startUseLoc").disabled = GAME.locations.length < 2;
+}
+$("startUseLoc").onclick = () => {
+  const i = GAME.locations.findIndex(l => l.id === $("startFromLoc").value);
+  if (i < 0) return;
+  if (GAME.locations.length < 2) { alert("Keep at least one location on the map."); return; }
+  const l = GAME.locations[i], n = (l.tasks || []).length;
+  const replacing = GAME.start ? " The starting challenge you have now is replaced." : "";
+  if (!confirm(`Use ${l.name || "this location"} as the starting challenge?\n\nIts ${n} challenge${n === 1 ? "" : "s"} move off the map: teams do ${n === 1 ? "it" : "them"} at Begin, after typing the password.${replacing}`)) return;
+  GAME.start = Play.startFromLocation(l, GAME.start);
+  GAME.locations.splice(i, 1);
+  locationsChanged(GAME.locations[Math.min(i, GAME.locations.length - 1)].id);
+  renderStartEditor();
+  if (!Play.normalizePassword(GAME.start.password)) $("startPassEdit").focus();
+};
+
 $("startAdd").onclick = () => {
   GAME.start = { name: "Before you set off", arrivalText: "", password: "", tasks: [{ id: Play.newTaskId(GAME), prompt: "" }] };
   saveDraft(); renderStartEditor();
