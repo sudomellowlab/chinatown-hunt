@@ -142,7 +142,9 @@ first.
 - Starting challenge (optional, 18 September 2026): opens as soon as a team taps Begin, with no
   location needed. It asks first for a password the LoQuiz host gives out (capitals and extra
   spaces don't matter) under wording you can change, then shows its text and challenges; no location opens until it's
-  finished. Set up under **Starting challenge** in the admin panel, with **Try it here**. In the
+  finished. Set up under **Starting challenge** in the admin panel, with **Try it here**: either
+  write a new one (**Add a starting challenge**) or promote a location you've already built
+  (**Use this location**), whose text and challenges move across as its pin comes off the map. In the
   exported file its content is encrypted with the password, so the file gives away neither.
   Importing a game file with one asks for that password.
 - Google Maps: paste a Google Maps Platform key (Map Tiles API) under **Map** in the admin
