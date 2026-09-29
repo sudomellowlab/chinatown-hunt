@@ -61,7 +61,10 @@ function applyContent(game){
   for (const k of ["clues", "suspects"]) if (Array.isArray(game[k])) GAME[k] = structuredClone(game[k]);
   if (game.map && typeof game.map === "object") GAME.map = { ...GAME.map, ...game.map };
   if ("start" in game) GAME.start = game.start ? {
-    name: game.start.name ?? "", lockText: game.start.lockText ?? "", arrivalText: game.start.arrivalText ?? "", password: game.start.password ?? "", tasks: structuredClone(game.start.tasks || []),
+    name: game.start.name ?? "", lockText: game.start.lockText ?? "", arrivalText: game.start.arrivalText ?? "", password: game.start.password ?? "",
+    // Where it stood before it was promoted, so Send back to the map still knows.
+    ...(game.start.from && typeof game.start.from === "object" ? { from: structuredClone(game.start.from) } : {}),
+    tasks: structuredClone(game.start.tasks || []),
   } : null;
   state.clockMinutes = GAME.durationMinutes;
   fitToLocations();
@@ -586,7 +589,8 @@ function gameForExport(){
     return out;
   });
   const s = GAME.start;
-  game.start = s ? { name: s.name ?? "", lockText: s.lockText ?? "", arrivalText: s.arrivalText ?? "", password: s.password ?? "", tasks: (s.tasks || []).map(cleanTask) } : null;
+  game.start = s ? { name: s.name ?? "", lockText: s.lockText ?? "", arrivalText: s.arrivalText ?? "", password: s.password ?? "",
+    ...(s.from ? { from: s.from } : {}), tasks: (s.tasks || []).map(cleanTask) } : null;
   return game;
 }
 // The starting challenge as it goes into the exported file: its heading and password screen text (shown
@@ -1087,7 +1091,7 @@ $("startUseLoc").onclick = () => {
   const l = GAME.locations[i], n = (l.tasks || []).length;
   const replacing = GAME.start ? " The starting challenge you have now is replaced." : "";
   if (!confirm(`Use ${l.name || "this location"} as the starting challenge?\n\nIts ${n} challenge${n === 1 ? "" : "s"} move off the map: teams do ${n === 1 ? "it" : "them"} at Begin, after typing the password.${replacing}`)) return;
-  GAME.start = Play.startFromLocation(l, GAME.start);
+  GAME.start = Play.startFromLocation(l, GAME.start, i);
   GAME.locations.splice(i, 1);
   locationsChanged(GAME.locations[Math.min(i, GAME.locations.length - 1)].id);
   renderStartEditor();
@@ -1105,6 +1109,26 @@ $("startTaskAdd").onclick = () => {
   saveDraft(); renderStartEditor();
   $("startTaskEdit").querySelector("li:last-child .prose")?.focus();
 };
+/* The other way round: the starting challenge becomes a location again, back where it stood if
+   it came from one, otherwise at the centre of the map to be dragged into place. */
+$("startToMap").onclick = () => {
+  const s = GAME.start; if (!s) return;
+  const n = (s.tasks || []).length;
+  const centre = map.getCenter();
+  const { location, placed, index } = Play.locationFromStart(s,
+    { lat: round6(centre.lat), lng: round6(centre.lng), radius: GAME.defaults.radius }, GAME.locations.map(l => l.id));
+  if (!confirm(`Put "${s.name || "the starting challenge"}" back on the map as a location?\n\nIts ${n} challenge${n === 1 ? "" : "s"} go with it, and teams walk to it like any other location. The password is no longer used.`)) return;
+  GAME.locations.splice(index == null ? GAME.locations.length : Math.min(index, GAME.locations.length), 0, location);
+  GAME.start = null;
+  state.progress = Play.reconcile(state.progress, GAME);
+  locationsChanged(location.id);
+  renderStartEditor();
+  draft.notice = placed === "remembered" ? "Back where it was on the map." : "Added at the centre of the map. Drag its pin into place.";
+  renderPoi();
+  map.setView([location.lat, location.lng], Math.max(map.getZoom(), 17));
+  makeRoomForMap();
+};
+
 $("startRemove").onclick = () => {
   const n = GAME.start?.tasks.length || 0;
   if (!confirm(`Remove the starting challenge${n ? ` and its ${n} challenge${n === 1 ? "" : "s"}` : ""}? Teams will begin straight onto the map. Export first if you might want it back.`)) return;

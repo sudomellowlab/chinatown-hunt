@@ -645,3 +645,46 @@ describe("a location becoming the starting challenge", () => {
     assert.deepEqual(Play.validateGame(g).filter(l => l.startsWith("Starting challenge")), []);
   });
 });
+
+describe("the starting challenge going back to the map", () => {
+  const built = { id: "l-x", name: "Telok Ayer Green", lat: 1.2809, lng: 103.8462, radius: 20,
+    arrivalText: "Stand by the plaque.", tasks: [{ id: "t-a", prompt: "First" }] };
+  const centre = { lat: 1.3, lng: 103.9, radius: 25 };
+
+  test("a location promoted and sent back lands exactly where it was, with its id", () => {
+    const start = Play.startFromLocation(built, null, 2);
+    const { location, placed, index } = Play.locationFromStart(start, centre, ["other"]);
+    assert.deepEqual(location, built);
+    assert.equal(placed, "remembered");
+    assert.equal(index, 2, "and in the same place in the list");
+  });
+
+  test("one written from scratch is placed where the caller says", () => {
+    const written = { name: "Before you set off", arrivalText: "Hello.", password: "red lantern", tasks: [{ id: "t-1", prompt: "?" }] };
+    const { location, placed, index } = Play.locationFromStart(written, centre, []);
+    assert.equal(placed, "fallback");
+    assert.equal(index, null);
+    assert.equal(location.lat, centre.lat);
+    assert.equal(location.lng, centre.lng);
+    assert.equal(location.radius, centre.radius);
+    assert.ok(location.id.startsWith("l-"));
+    assert.deepEqual(location.tasks, written.tasks);
+    assert.ok(!("password" in location) && !("from" in location), "nothing about the password goes to the map");
+  });
+
+  test("an id already in use isn't handed out twice", () => {
+    const start = Play.startFromLocation(built, null, 0);
+    const { location } = Play.locationFromStart(start, centre, ["l-x", "other"]);
+    assert.notEqual(location.id, "l-x");
+    assert.ok(location.id.startsWith("l-"));
+  });
+
+  test("the challenges are copies, and a round trip changes nothing", () => {
+    const start = Play.startFromLocation(built, null, 1);
+    const { location } = Play.locationFromStart(start, centre, []);
+    location.tasks[0].prompt = "Changed";
+    assert.equal(start.tasks[0].prompt, "First");
+    const again = Play.locationFromStart(Play.startFromLocation(built, { password: "x" }, 1), centre, []);
+    assert.deepEqual(again.location, built);
+  });
+});

@@ -131,13 +131,38 @@ const Play = {
      challenge, so they don't have to write one from scratch. Its name, text and challenges come
      across as they are; the password and password screen wording stay as they were set (the
      location has none of its own). The caller takes the location off the map. */
-  startFromLocation(location, start){
+  startFromLocation(location, start, index){
     return {
       name: location.name ?? "",
       lockText: start?.lockText ?? "",
       arrivalText: location.arrivalText ?? "",
       password: start?.password ?? "",
       tasks: (location.tasks || []).map(t => ({ ...t })),
+      // Where it stood, so it can be put back exactly there (see locationFromStart).
+      from: { id: location.id, lat: location.lat, lng: location.lng,
+        ...(location.radius != null ? { radius: location.radius } : {}), ...(Number.isInteger(index) ? { index } : {}) },
+    };
+  },
+  /* And back again: the starting challenge becomes a location on the map. One promoted from a
+     location returns to its own spot, keeping its id so nothing about progress is lost; one
+     written from scratch has no spot of its own and is placed at `fallback` for the organiser
+     to drag into place. */
+  locationFromStart(start, fallback, takenIds = [], random = Math.random){
+    const from = start?.from || {};
+    const remembered = Number.isFinite(from.lat) && Number.isFinite(from.lng);
+    const radius = from.radius ?? fallback?.radius;
+    return {
+      location: {
+        id: from.id && !takenIds.includes(from.id) ? from.id : Play.newId("l", takenIds, random),
+        name: start?.name ?? "",
+        lat: remembered ? from.lat : fallback.lat,
+        lng: remembered ? from.lng : fallback.lng,
+        ...(radius != null ? { radius } : {}),
+        arrivalText: start?.arrivalText ?? "",
+        tasks: (start?.tasks || []).map(t => ({ ...t })),
+      },
+      placed: remembered ? "remembered" : "fallback",
+      index: Number.isInteger(from.index) ? from.index : null,
     };
   },
   // Passwords are said aloud and typed on phones: ignore case and extra spaces.

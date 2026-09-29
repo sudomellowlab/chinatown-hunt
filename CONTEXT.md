@@ -144,7 +144,9 @@ first.
   spaces don't matter) under wording you can change, then shows its text and challenges; no location opens until it's
   finished. Set up under **Starting challenge** in the admin panel, with **Try it here**: either
   write a new one (**Add a starting challenge**) or promote a location you've already built
-  (**Use this location**), whose text and challenges move across as its pin comes off the map. In the
+  (**Use this location**), whose text and challenges move across as its pin comes off the map;
+  **Send back to the map** turns it into a location again, back at its own spot if it came from
+  one. In the
   exported file its content is encrypted with the password, so the file gives away neither.
   Importing a game file with one asks for that password.
 - Google Maps: paste a Google Maps Platform key (Map Tiles API) under **Map** in the admin
@@ -160,7 +162,7 @@ first.
   and both lists. Teams see two buttons, Clues and Suspects, and read one list at a time; neither is
   chosen until they tap one. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 166 unit tests and 125 browser tests, run by CI on every push.
+- 170 unit tests and 127 browser tests, run by CI on every push.
 
 **Live (17 September 2026)**
 - Real content is in: 9 locations, 60 challenges (49 with pictures on

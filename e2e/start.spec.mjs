@@ -232,3 +232,64 @@ test("using a location replaces an existing starting challenge, keeping its pass
   await expect(page.locator("#startName")).toHaveValue(loc.name);
   await expect(page.locator(".pin")).toHaveCount(locs.length - 1);
 });
+
+test("Send back to the map returns a promoted location to its own spot, challenges and all", async ({ app, page }) => {
+  await app.open();
+  const locs = await app.locations();
+  const thk = locs.find(l => l.id === "thian-hock-keng");
+  const order = locs.map(l => l.id);
+  await app.openTools();
+
+  app.expectDialog(`Use ${thk.name} as the starting challenge?\n\nIts 3 challenges move off the map: teams do them at Begin, after typing the password.`, { accept: true });
+  await page.locator("#startFromLoc").selectOption(thk.id);
+  await page.locator("#startUseLoc").click();
+  await page.locator("#startPassEdit").fill(PASSWORD);
+  await expect(page.locator(".pin")).toHaveCount(locs.length - 1);
+
+  // Where it stood is kept with the draft, so it survives closing the panel and coming back.
+  await page.reload();
+  await expect(page.locator(".pin")).toHaveCount(locs.length - 1);
+  await app.openTools();
+  await expect(page.locator("#startName")).toHaveValue(thk.name);
+
+  // …and back again.
+  app.expectDialog(`Put "${thk.name}" back on the map as a location?\n\nIts 3 challenges go with it, and teams walk to it like any other location. The password is no longer used.`, { accept: true });
+  await page.locator("#startToMap").click();
+
+  await expect(page.locator(".pin")).toHaveCount(locs.length);
+  await expect(page.locator(`.pin[data-id="${thk.id}"]`)).toHaveCount(1);
+  await expect(page.locator("#startOff")).toBeVisible();            // no starting challenge any more
+  await expect(page.locator("#startFields")).toBeHidden();
+  await app.openTools();
+  await expect(page.locator("#poiInfo")).toContainText("Back where it was on the map.");
+
+  // Same place in the list, same position, same challenges as before.
+  const after = await app.locations();
+  expect(after.map(l => l.id)).toEqual(order);
+  const back = after.find(l => l.id === thk.id);
+  expect({ lat: back.lat, lng: back.lng, radius: back.radius }).toEqual({ lat: thk.lat, lng: thk.lng, radius: thk.radius });
+  expect(back.arrivalText).toBe(thk.arrivalText);
+  await app.openTools();
+  await page.locator("#capTarget").selectOption(thk.id);
+  await expect(page.locator("#taskList > li")).toHaveCount(GAME.locations.find(l => l.id === thk.id).tasks.length);
+  await expect(page.locator("#exportGame")).toBeEnabled();
+});
+
+test("a starting challenge written from scratch goes to the middle of the map, to be dragged into place", async ({ app, page }) => {
+  await setUpStart(app, page);
+  const locs = await app.locations();
+  await app.openTools();
+
+  app.expectDialog(`Put "Before you set off" back on the map as a location?\n\nIts 2 challenges go with it, and teams walk to it like any other location. The password is no longer used.`, { accept: true });
+  await page.locator("#startToMap").click();
+
+  await expect(page.locator(".pin")).toHaveCount(locs.length + 1);
+  await app.openTools();
+  await expect(page.locator("#poiInfo")).toContainText("Added at the centre of the map. Drag its pin into place.");
+  await expect(page.locator("#locName")).toHaveValue("Before you set off");
+  const after = await app.locations();
+  expect(after.at(-1).name).toBe("Before you set off");           // added at the end
+  await app.openTools();
+  await expect(page.locator("#taskList > li")).toHaveCount(2);
+  await expect(page.locator("#exportGame")).toBeEnabled();
+});
