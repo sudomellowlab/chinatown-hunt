@@ -221,3 +221,119 @@ test("in Preview, Close sits above the preview bar and the page fills the space 
   expect(Math.round(shown.h)).toBe(Math.round(390 * shown.ratio));   // nothing is trimming it
   expect(Math.abs(shown.above - shown.below)).toBeLessThan(2);       // centred in the space it has
 });
+
+// ── a challenge's own picture, opened big ──────────────────────────────────
+const scaleOf = page => page.locator("#docPage figure.pic").evaluate(el => {
+  const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+  return { scale: Math.round(m.a * 100) / 100, x: Math.round(m.e), y: Math.round(m.f) };
+});
+
+test("a challenge picture opens full screen, zooms with a pinch, and drags around", async ({ app, page, browser }) => {
+  await app.open();
+  const locs = await app.locations();
+  const thk = locs.find(l => l.id === "thian-hock-keng");
+  await app.openTools();
+  await page.locator("#capTarget").selectOption(thk.id);
+  await page.locator("#taskList li").first().locator(".tedit").click();
+  await page.locator("#tfImage").fill(`${IMG}/hunt/plaque.png`);
+  await page.locator("#tfSave").click();
+  const html = await exportGame(page);
+
+  await atTheTemple(browser, html, async (phone) => {
+    await phone.locator("#nextBtn").click();
+    await expect(phone.locator("#stage figure.pic.tappable")).toBeVisible();
+    await expect(phone.locator("#doc")).toBeHidden();
+
+    // Tapping it opens the viewer, with no page buttons for a single picture.
+    await phone.locator("#stage figure.pic img").click();
+    await expect(phone.locator("#doc")).toBeVisible();
+    await expect(phone.locator("#docTitle")).toHaveText("Picture");
+    await expect(phone.locator("#docNav")).toBeHidden();
+    await expect(phone.locator("#docPage img")).toHaveAttribute("src", `${IMG}/hunt/plaque.png`);
+    expect((await scaleOf(phone)).scale).toBe(1);
+
+    // A tap makes it bigger, another puts it back.
+    await phone.locator("#docPage img").click();
+    expect((await scaleOf(phone)).scale).toBe(2.5);
+    await expect(phone.locator("#docPage")).toHaveClass(/\bzoom\b/);
+    await phone.locator("#docPage img").click();
+    expect((await scaleOf(phone)).scale).toBe(1);
+
+    // Two fingers moving apart zoom in; the picture then drags around, but never right away.
+    const box = await phone.locator("#docPage").boundingBox();
+    const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await phone.evaluate(({ x, y }) => {
+      const el = document.getElementById("docPage");
+      const touch = (id, cx, cy) => new Touch({ identifier: id, target: el, clientX: cx, clientY: cy });
+      const fire = (type, pts) => el.dispatchEvent(new TouchEvent(type, {
+        bubbles: true, cancelable: true, touches: pts, targetTouches: pts, changedTouches: pts }));
+      fire("touchstart", [touch(1, x - 30, y), touch(2, x + 30, y)]);
+      fire("touchmove", [touch(1, x - 90, y), touch(2, x + 90, y)]);      // three times the gap
+      fire("touchend", []);
+    }, mid);
+    const zoomed = await scaleOf(phone);
+    expect(zoomed.scale).toBe(3);
+
+    await phone.mouse.move(mid.x, mid.y);
+    await phone.evaluate(({ x, y }) => {
+      const el = document.getElementById("docPage");
+      const touch = cx => new Touch({ identifier: 3, target: el, clientX: cx, clientY: y });
+      const fire = (type, pts) => el.dispatchEvent(new TouchEvent(type, {
+        bubbles: true, cancelable: true, touches: pts, targetTouches: pts, changedTouches: pts }));
+      fire("touchstart", [touch(x)]);
+      fire("touchmove", [touch(x - 50)]);
+      fire("touchend", []);
+    }, mid);
+    const moved = await scaleOf(phone);
+    expect(moved.scale).toBe(3);
+    expect(moved.x).toBeLessThan(zoomed.x);                              // it moved with the finger
+
+    // Closing comes back to the challenge; opening it again starts fitted, not zoomed.
+    await phone.locator("#docClose").click();
+    await expect(phone.locator("#doc")).toBeHidden();
+    await expect(phone.locator("#prompt")).toBeVisible();
+    await phone.locator("#stage figure.pic img").click();
+    expect((await scaleOf(phone)).scale).toBe(1);
+  });
+});
+
+test("zooming out never leaves the picture adrift, and a handout page zooms the same way", async ({ app, page, browser }) => {
+  await app.open();
+  const locs = await app.locations();
+  const thk = locs.find(l => l.id === "thian-hock-keng");
+  await app.openTools();
+  await page.locator("#capTarget").selectOption(thk.id);
+  await page.locator("#taskList li").first().locator(".tedit").click();
+  await page.locator("#tfDocPages").fill(PAGES.slice(0, 3).join("\n"));
+  await page.locator("#tfSave").click();
+  const html = await exportGame(page);
+
+  await atTheTemple(browser, html, async (phone) => {
+    await phone.locator("#nextBtn").click();
+    await phone.locator("#docBtn").click();
+    await expect(phone.locator("#docNav")).toBeVisible();               // 3 pages: buttons are there
+
+    await phone.locator("#docPage img").click();                        // zoom in
+    expect((await scaleOf(phone)).scale).toBe(2.5);
+    await phone.locator("#docNext").click();                            // turning the page starts fresh
+    expect((await scaleOf(phone)).scale).toBe(1);
+    expect((await scaleOf(phone)).x).toBe(0);
+
+    // Zoomed in and dragged to the edge, then back out: it sits square again.
+    await phone.locator("#docPage img").click();
+    await phone.evaluate(() => {
+      const el = document.getElementById("docPage");
+      const touch = cx => new Touch({ identifier: 9, target: el, clientX: cx, clientY: 300 });
+      const fire = (type, pts) => el.dispatchEvent(new TouchEvent(type, {
+        bubbles: true, cancelable: true, touches: pts, targetTouches: pts, changedTouches: pts }));
+      fire("touchstart", [touch(300)]);
+      fire("touchmove", [touch(-2000)]);                                 // far past the edge
+      fire("touchend", []);
+    });
+    const dragged = await scaleOf(phone);
+    const box = await phone.locator("#docPage").boundingBox();
+    expect(Math.abs(dragged.x)).toBeLessThanOrEqual(Math.ceil(box.width * (2.5 - 1) / 2));
+    await phone.locator("#docPage img").click();                         // back out
+    expect(await scaleOf(phone)).toEqual({ scale: 1, x: 0, y: 0 });
+  });
+});

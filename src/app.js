@@ -433,14 +433,23 @@ function fill(el, ...children){ el.replaceChildren(...children.flat().filter(c =
    one picture per page, instead of a PDF in another tab. It opens over the
    challenge and closes back to it; nothing about progress changes.
    ════════════════════════════════════════════════════════════════════ */
-const doc = { pages: [], at: 0, taskId: null };
+const doc = { pages: [], at: 0, taskId: null, scale: 1, x: 0, y: 0 };
+const MAX_ZOOM = 5;
 function openDoc(task){
-  doc.pages = Play.docPages(task);
+  openViewer(Play.docPages(task), task.id, Play.docLabel(task).replace(/^open (the )?/i, "") || "Document");
+}
+// A challenge's own picture, opened big: the same viewer, with one page.
+function openPicture(task){
+  openViewer([String(task.image ?? "").trim()], task.id, "Picture");
+}
+function openViewer(pages, taskId, title){
+  doc.pages = pages.filter(Boolean);
   doc.at = 0;
-  doc.taskId = task.id;
+  doc.taskId = taskId;
   if (!doc.pages.length) return;
-  $("docTitle").textContent = Play.docLabel(task).replace(/^open (the )?/i, "") || "Document";
+  $("docTitle").textContent = title;
   $("docJump").replaceChildren(...doc.pages.map((p, i) => new Option(`Page ${i + 1} of ${doc.pages.length}`, String(i))));
+  $("docNav").hidden = doc.pages.length < 2;      // one picture needs no page buttons
   $("doc").hidden = false;
   showDocPage(0);
 }
@@ -450,17 +459,33 @@ function closeDoc(){ $("doc").hidden = true; doc.taskId = null; $("docPage").rep
 function docBelongsTo(taskId){ if (!$("doc").hidden && doc.taskId !== taskId) closeDoc(); }
 function showDocPage(i){
   doc.at = Math.max(0, Math.min(i, doc.pages.length - 1));
-  const page = picture(doc.pages[doc.at], "docimg", `Page ${doc.at + 1}`);
+  const page = picture(doc.pages[doc.at], "docimg", doc.pages.length > 1 ? `Page ${doc.at + 1}` : "Picture");
   fill($("docPage"), page);
-  $("docPage").classList.remove("zoom");
   $("docPage").scrollTop = 0; $("docPage").scrollLeft = 0;
-  // Tapping the page switches between fitting the width and twice that, for the small print.
-  page?.addEventListener("click", () => $("docPage").classList.toggle("zoom"));
+  setZoom(1);
+  // A tap makes it bigger (and a tap while zoomed in puts it back), for the small print.
+  page?.addEventListener("click", () => setZoom(doc.scale > 1 ? 1 : 2.5));
   $("docJump").value = String(doc.at);
   $("docPrev").disabled = doc.at === 0;
   $("docNext").disabled = doc.at === doc.pages.length - 1;
   // Fetch the neighbouring pages so turning the page is instant.
   for (const near of [doc.at + 1, doc.at - 1]) if (doc.pages[near]) new Image().src = doc.pages[near];
+}
+
+/* ── zooming ──
+   Pinch to zoom, drag to move around, tap to jump in and out. The page's own pinch-zoom is
+   turned off for the game, so the viewer does it itself: the picture is scaled and shifted,
+   never allowed to wander entirely off screen. */
+function setZoom(scale, dx = 0, dy = 0){
+  doc.scale = Math.min(MAX_ZOOM, Math.max(1, scale));
+  const box = $("docPage").getBoundingClientRect();
+  const limitX = Math.max(0, (box.width * (doc.scale - 1)) / 2);
+  const limitY = Math.max(0, (box.height * (doc.scale - 1)) / 2);
+  doc.x = doc.scale === 1 ? 0 : Math.min(limitX, Math.max(-limitX, doc.x + dx));
+  doc.y = doc.scale === 1 ? 0 : Math.min(limitY, Math.max(-limitY, doc.y + dy));
+  const page = $("docPage").querySelector("figure.pic");
+  if (page) page.style.transform = `translate(${doc.x}px, ${doc.y}px) scale(${doc.scale})`;
+  $("docPage").classList.toggle("zoom", doc.scale > 1);
 }
 $("docClose").onclick = closeDoc;
 $("docPrev").onclick = () => showDocPage(doc.at - 1);
@@ -472,19 +497,49 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowLeft") showDocPage(doc.at - 1);
   if (e.key === "ArrowRight") showDocPage(doc.at + 1);
 });
-// Swiping the page turns it, unless the page is zoomed in (then the swipe pans it).
-let swipeFrom = null;
-$("docPage").addEventListener("touchstart", e => { swipeFrom = e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true });
+/* Fingers: one finger swipes to turn the page while the picture fits the screen, and drags it
+   around once zoomed in; two fingers pinch to zoom. */
+const touch = { x: 0, y: 0, gap: 0, scale: 1, pinching: false, moved: false };
+const gapBetween = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+$("docPage").addEventListener("touchstart", e => {
+  const t = e.touches;
+  touch.moved = false;
+  if (t.length === 2) { touch.pinching = true; touch.gap = gapBetween(t); touch.scale = doc.scale; }
+  else if (t.length === 1) { touch.pinching = false; touch.x = t[0].clientX; touch.y = t[0].clientY; }
+}, { passive: true });
+$("docPage").addEventListener("touchmove", e => {
+  const t = e.touches;
+  if (touch.pinching && t.length === 2) {
+    const gap = gapBetween(t);
+    if (touch.gap > 0) setZoom(touch.scale * (gap / touch.gap));
+    touch.moved = true;
+    e.preventDefault();
+  } else if (t.length === 1 && doc.scale > 1) {
+    setZoom(doc.scale, t[0].clientX - touch.x, t[0].clientY - touch.y);
+    touch.x = t[0].clientX; touch.y = t[0].clientY;
+    touch.moved = true;
+    e.preventDefault();
+  }
+}, { passive: false });
 $("docPage").addEventListener("touchend", e => {
-  if (swipeFrom == null || $("docPage").classList.contains("zoom")) return;
-  const dx = (e.changedTouches[0]?.clientX ?? swipeFrom) - swipeFrom;
+  if (touch.pinching) { touch.pinching = e.touches.length > 0; return; }
+  if (touch.moved || doc.scale > 1) return;
+  const dx = (e.changedTouches[0]?.clientX ?? touch.x) - touch.x;
   if (Math.abs(dx) > 60) showDocPage(doc.at + (dx < 0 ? 1 : -1));
-  swipeFrom = null;
 }, { passive: true });
 
 // The button that opens a challenge's document, when it has one.
 function docButton(task){
   return Play.docOf(task) ? h("button", { id:"docBtn", class:"secondary", onclick: () => openDoc(task) }, Play.docLabel(task)) : null;
+}
+/* A challenge's picture, tappable so it can be seen big and zoomed into. */
+function taskPicture(task){
+  const pic = picture(task.image, "qimg", "Picture for this challenge");
+  if (!pic) return null;
+  pic.classList.add("tappable");
+  pic.setAttribute("title", "Tap to see it bigger");
+  pic.querySelector("img")?.addEventListener("click", () => openPicture(task));
+  return pic;
 }
 
 /* A challenge's answer, when it has one: a box to type in, or the options to tap.
@@ -559,7 +614,7 @@ function renderSheet(){
     const answer = answerBlock(task);
     fill(body,
       closingNote,
-      picture(task.image, "qimg", "Picture for this challenge"),
+      taskPicture(task),
       task.prompt ? h("p", { id:"prompt", class:"prompt" }, linked(task.prompt)) : null,
       docButton(task),
       answer.node,
@@ -650,7 +705,7 @@ function renderStartChallenge(){
       if (last) finish.disabled = !answer.solved;
       fill(body,
         index === 0 && s.arrivalText ? h("p", { id:"sheettext" }, linked(s.arrivalText)) : null,
-        picture(task.image, "qimg", "Picture for this challenge"),
+        taskPicture(task),
         task.prompt ? h("p", { id:"prompt", class:"prompt" }, linked(task.prompt)) : null,
         docButton(task),
         answer.node,
