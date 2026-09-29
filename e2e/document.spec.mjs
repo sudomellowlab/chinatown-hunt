@@ -176,3 +176,48 @@ test("an open handout gives way when the team is moved elsewhere", async ({ app,
   await expect(page.locator("#reveal")).toBeVisible();
   await expect(page.locator("#doc")).toBeHidden();
 });
+
+test("in Preview, Close sits above the preview bar and the page fills the space between", async ({ app, page }) => {
+  await app.open();
+  const locs = await app.locations();                                // this closes the panel again
+  const loc = locs.find(l => l.id === "thian-hock-keng");
+  await app.openTools();
+  await page.locator("#capTarget").selectOption(loc.id);
+  await page.locator("#taskList li").first().locator(".tedit").click();
+  await page.locator("#tfDocPages").fill(PAGES.slice(0, 4).join("\n"));
+  await page.locator("#tfSave").click();
+
+  const [pv] = await Promise.all([page.waitForEvent("popup"), page.locator("#previewGame").click()]);
+  await pv.waitForLoadState("load");
+  pv.on("dialog", d => d.accept());
+  await pv.setViewportSize({ width: 390, height: 780 });
+  await pv.locator("#startBtn").click();
+  await pv.locator("#pvGo").selectOption(loc.id);
+  await expect(pv.locator("#sheetname")).toHaveText(loc.name);
+  await pv.locator("#nextBtn").click();
+  await pv.locator("#docBtn").click();
+  await expect(pv.locator("#doc")).toBeVisible();
+
+  // The preview bar must not swallow Close: whatever is on top at its centre is the button itself.
+  const onTop = await pv.locator("#docClose").evaluate(el => {
+    const b = el.getBoundingClientRect();
+    return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.id;
+  });
+  expect(onTop).toBe("docClose");
+  await pv.locator("#docClose").click();
+  await expect(pv.locator("#doc")).toBeHidden();
+  await expect(pv.locator("#prompt")).toBeVisible();
+
+  /* The page takes the full width at its own shape: none of the caps that stop a challenge's
+     picture filling the screen (max-height: 46vh and friends) apply in here. */
+  await pv.locator("#docBtn").click();
+  const shown = await pv.locator("#docPage img").evaluate(el => {
+    const b = el.getBoundingClientRect(), box = el.closest("#docPage").getBoundingClientRect();
+    return { w: b.width, h: b.height, cap: getComputedStyle(el).maxHeight, ratio: el.naturalHeight / el.naturalWidth,
+             above: b.y - box.y, below: box.bottom - b.bottom };
+  });
+  expect(shown.cap).toBe("none");
+  expect(shown.w).toBe(390);
+  expect(Math.round(shown.h)).toBe(Math.round(390 * shown.ratio));   // nothing is trimming it
+  expect(Math.abs(shown.above - shown.below)).toBeLessThan(2);       // centred in the space it has
+});
