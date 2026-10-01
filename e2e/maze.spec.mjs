@@ -8,6 +8,7 @@ import { GAME } from "../src/game.js";
 const THK = GAME.locations.find(l => l.id === "thian-hock-keng");
 const route = pickArrival([THK, ...GAME.locations.filter(l => l !== THK)]);
 const SENTENCE = "Sang Nila Utama reigned over it";
+const [N, E, S, W] = [1, 2, 4, 8];                    // which side of a square a wall is on
 const LETTERS = "SangNilaUtamareignedoverit";
 
 async function exportGame(page) {
@@ -78,39 +79,44 @@ test("a maze is built from a sentence, traced on a phone, and finishes the chall
   await atTheMaze(browser, html, async (phone) => {
     // Nothing is given away before they start.
     await expect(phone.locator("#mazeLetters text")).toHaveCount(0);
-    await expect(phone.locator("#mazeSays")).toHaveText("Start on the marked square and drag along the route.");
+    await expect(phone.locator("#mazeSays")).toHaveText("Start at the gold square and find your way out at the bottom.");
     await expect(phone.locator("#mazeStart")).toBeVisible();
     await expect(phone.locator("#nextBtn")).toBeDisabled();
 
-    // The first few squares of the route reveal their letters.
+    // Walking the first few squares of the route shows their letters.
     await trace(phone, maze, maze.path.slice(0, 5));
     await expect(phone.locator("#mazeLetters text")).toHaveCount(5);
-    expect(await phone.locator("#mazeLetters text").allTextContents()).toEqual([...LETTERS.slice(0, 5)]);
-    await expect(phone.locator("#mazeSays")).toHaveText(`5 of ${maze.path.length} squares`);
+    await expect(phone.locator("#mazeSays")).toHaveText("Keep going. The way out is at the bottom.");
     await expect(phone.locator("#nextBtn")).toBeDisabled();
     await expect(phone.locator("#mazeStart")).toBeHidden();
+    // Nothing marks them out as right: the letters are plain until the end.
+    await expect(phone.locator("#mazeLetters text.route")).toHaveCount(0);
 
-    // A square off the route does nothing at all: pressed on its own, so nothing is crossed.
-    const offRoute = [...Array(maze.cols * maze.rows).keys()].find(c => !maze.path.includes(c));
-    await trace(phone, maze, [offRoute]);
+    // Through a wall is no way at all.
+    const walled = [...Array(maze.cols * maze.rows).keys()].find(c =>
+      Math.abs(c - maze.path[4]) === 1 && (maze.walls[maze.path[4]] & (c > maze.path[4] ? E : W)));
+    if (walled != null) {
+      await trace(phone, maze, [maze.path[4], walled]);
+      await expect(phone.locator("#mazeLetters text")).toHaveCount(5);
+    }
+
+    // Retreating the way they came rubs the trail out behind them, though the letter stays seen.
+    await trace(phone, maze, [maze.path[4], maze.path[3]]);
+    await expect(phone.locator("#mazeTrail rect")).toHaveCount(4);
     await expect(phone.locator("#mazeLetters text")).toHaveCount(5);
 
-    // Dragging back the way they came rubs the last letter out.
-    await trace(phone, maze, [maze.path[4], maze.path[3]]);
-    await expect(phone.locator("#mazeLetters text")).toHaveCount(4);
-
-    // The whole route: the sentence appears and Next opens.
+    // Out at the bottom: the route lights up and the sentence appears.
     await trace(phone, maze, maze.path);
-    await expect(phone.locator("#mazeLetters text")).toHaveCount(maze.path.length);
-    expect(await phone.locator("#mazeLetters text").allTextContents()).toEqual([...LETTERS]);
     await expect(phone.locator("#mazeSays")).toHaveText(SENTENCE);
+    await expect(phone.locator("#mazeLetters text.route")).toHaveCount(maze.path.length);
+    expect(await phone.locator("#mazeLetters text.route").allTextContents()).toEqual([...LETTERS]);
     await expect(phone.locator("#nextBtn")).toBeEnabled();
 
     // It stays done after a reload.
     await phone.reload();
     await phone.locator("#startBtn").click();
     await expect(phone.locator("#mazeSays")).toHaveText(SENTENCE);
-    await expect(phone.locator("#mazeLetters text")).toHaveCount(maze.path.length);
+    await expect(phone.locator("#mazeLetters text.route")).toHaveCount(maze.path.length);
     await expect(phone.locator("#nextBtn")).toBeEnabled();
   });
 });
@@ -121,7 +127,6 @@ test("the maze is drawn with walls, and the route is the only way through", asyn
   await atTheMaze(browser, html, async (phone) => {
     /* Every wall the maze has is drawn: each square's top and left, plus the bottom and right
        edges of the grid. (A wall line has no thickness of its own, so it's counted, not looked at.) */
-    const N = 1, E = 2, S = 4, W = 8;
     let expected = 0;
     for (let cell = 0; cell < maze.cols * maze.rows; cell++) {
       const col = cell % maze.cols, row = Math.floor(cell / maze.cols), w = maze.walls[cell];
@@ -150,14 +155,36 @@ test("the maze is drawn with walls, and the route is the only way through", asyn
     const viewBox = await phone.locator("#mazeGrid").getAttribute("viewBox");
     expect(viewBox).toBe(`-0.6 -0.6 ${maze.cols * 10 + 1.2} ${maze.rows * 10 + 1.2}`);
 
-    // Starting anywhere but the marked square gets nowhere.
+    // Starting anywhere but the way in gets nowhere.
     const notTheStart = [...Array(maze.cols * maze.rows).keys()].find(c => c !== maze.path[0]);
     await trace(phone, maze, [notTheStart]);
     await expect(phone.locator("#mazeLetters text")).toHaveCount(0);
 
-    // Skipping ahead doesn't work either: the second square is no good without the first.
+    // Nor does starting part way along the route.
     await trace(phone, maze, [maze.path[1], maze.path[2]]);
     await expect(phone.locator("#mazeLetters text")).toHaveCount(0);
+    await expect(phone.locator("#nextBtn")).toBeDisabled();
+
+    /* A wrong turn is walkable, and its squares carry letters too — which is what stops a team
+       feeling their way by watching for letters. */
+    const wrongTurn = (() => {
+      const onRoute = new Set(maze.path);
+      for (const [i, cell] of maze.path.entries()) {
+        for (const d of [-maze.cols, maze.cols, -1, 1]) {
+          const to = cell + d;
+          if (to < 0 || to >= maze.cols * maze.rows || onRoute.has(to)) continue;
+          if (d === -1 && cell % maze.cols === 0) continue;
+          if (d === 1 && to % maze.cols === 0) continue;
+          const bit = d === -maze.cols ? N : d === maze.cols ? S : d === 1 ? E : W;
+          if (!(maze.walls[cell] & bit)) return { at: i, cell, to };
+        }
+      }
+      return null;
+    })();
+    expect(wrongTurn, "the maze has a wrong turn to take").not.toBeNull();
+    await trace(phone, maze, [...maze.path.slice(0, wrongTurn.at + 1), wrongTurn.to]);
+    await expect(phone.locator("#mazeLetters text")).toHaveCount(wrongTurn.at + 2);
+    await expect(phone.locator("#mazeLetters text.route")).toHaveCount(0, "nothing says it was wrong");
     await expect(phone.locator("#nextBtn")).toBeDisabled();
   });
 });

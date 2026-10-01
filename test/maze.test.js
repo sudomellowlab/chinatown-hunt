@@ -222,3 +222,33 @@ describe("how hard the maze is", () => {
     assert.notDeepEqual(Maze.build(S, 0, "easy").path, Maze.build(S, 0, "hard").path);
   });
 });
+
+describe("a letter on every square", () => {
+  const maze = Maze.build("Sang Nila Utama reigned over it and was given the name of Seri Teri Buana.");
+
+  test("the route carries the sentence and every other square carries a decoy", () => {
+    assert.equal(maze.grid.length, maze.cols * maze.rows);
+    maze.path.forEach((cell, i) => assert.equal(maze.grid[cell], maze.letters[i], `square ${i + 1}`));
+    for (const ch of maze.grid) assert.match(ch, /\S/, "no square is left blank");
+  });
+
+  test("the decoys are letters from the sentence, so nothing stands out", () => {
+    const used = new Set(maze.letters), onRoute = new Set(maze.path);
+    for (let cell = 0; cell < maze.cols * maze.rows; cell++)
+      if (!onRoute.has(cell)) assert.ok(used.has(maze.grid[cell]), `${maze.grid[cell]} is not a letter of the sentence`);
+  });
+
+  test("a maze missing its letters, or carrying the wrong ones, is named as such", () => {
+    const { grid, ...noGrid } = maze;
+    assert.equal(Maze.problem(noGrid), "the maze's squares don't all have a letter");
+    assert.equal(Maze.problem({ ...maze, grid: "abc" }), "the maze's squares don't all have a letter");
+    const wrong = [...maze.grid];
+    wrong[maze.path[2]] = wrong[maze.path[2]] === "z" ? "y" : "z";
+    assert.equal(Maze.problem({ ...maze, grid: wrong.join("") }), "square 3 of the route carries the wrong letter");
+  });
+
+  test("the same sentence still gives the same letters everywhere", () => {
+    assert.equal(Maze.build("Teri Buana").grid, Maze.build("Teri Buana").grid);
+    assert.notEqual(Maze.build("Teri Buana", 1).grid, Maze.build("Teri Buana").grid);
+  });
+});

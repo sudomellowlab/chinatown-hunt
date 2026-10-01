@@ -568,8 +568,11 @@ function mazeBlock(task){
     role:"img", "aria-label":"Maze: trace the route with your finger" });
   const at = cell => ({ col: cell % maze.cols, row: Math.floor(cell / maze.cols) });
 
-  // The squares the team has reached so far, in order; a finished maze shows the lot.
-  let traced = done ? [...maze.path] : [];
+  /* Where the team has walked: `trail` is the way back from the entrance (retreating out of a
+     dead end rubs it out behind them), and `seen` is every square they've set foot on, whose
+     letter stays on show. A finished maze shows the route. */
+  let trailCells = done ? [...maze.path] : [];
+  const seen = new Set(trailCells);
   const trail = svg("g", { id:"mazeTrail" });
   const letters = svg("g", { id:"mazeLetters" });
   box.append(trail, letters);
@@ -592,26 +595,36 @@ function mazeBlock(task){
   box.append(startMark);
 
   const told = h("p", { id:"mazeSays", class:"mazesays", role:"status" });
+  const onRoute = new Set(maze.path);
   function draw(){
-    trail.replaceChildren(...traced.map(cell => {
+    const finished = Play.isSolved(state.progress, task);
+    // The way back from the entrance, and the route itself once they're out.
+    trail.replaceChildren(...(finished ? maze.path : trailCells).map(cell => {
       const { col, row } = at(cell);
-      return svg("rect", { x:col * size + 0.8, y:row * size + 0.8, width:size - 1.6, height:size - 1.6, rx:1.2 });
+      return svg("rect", { class: finished ? "route" : "", x:col * size + 0.8, y:row * size + 0.8,
+        width:size - 1.6, height:size - 1.6, rx:1.2 });
     }));
-    letters.replaceChildren(...traced.map((cell, i) => {
+    /* Every square they've set foot on keeps its letter — the wrong ones carry letters too.
+       Once they're out, the route is drawn last and in order, so it reads as the sentence. */
+    const show = finished ? [...[...seen].filter(c => !onRoute.has(c)), ...maze.path] : [...seen];
+    letters.replaceChildren(...show.map(cell => {
       const { col, row } = at(cell);
-      const t = svg("text", { x:col * size + size / 2, y:row * size + size / 2, "text-anchor":"middle", "dominant-baseline":"central" });
-      t.textContent = maze.letters[i] ?? "";
+      const t = svg("text", { class: finished && onRoute.has(cell) ? "route" : "",
+        x:col * size + size / 2, y:row * size + size / 2, "text-anchor":"middle", "dominant-baseline":"central" });
+      t.textContent = maze.grid?.[cell] ?? "";
       return t;
     }));
-    startMark.toggleAttribute("hidden", traced.length > 0);
-    const finished = traced.length === maze.path.length;
+    startMark.toggleAttribute("hidden", seen.size > 0);
     told.textContent = finished ? (Play.mazeSentence(task) || maze.letters)
-      : traced.length ? `${traced.length} of ${maze.path.length} squares` : "Start on the marked square and drag along the route.";
+      : seen.size ? "Keep going. The way out is at the bottom."
+      : "Start at the gold square and find your way out at the bottom.";
     told.classList.toggle("done", finished);
   }
 
-  /* Dragging: whichever square is under the finger, if it's the next one on the route (or the
-     start), is added. Anything else is ignored, so a slip costs nothing. */
+  /* Dragging: the finger walks the maze. Any square it can reach from where it is — next door,
+     with no wall between — is walked into, right way or wrong; dragging back the way it came
+     retreats. Only coming out at the bottom finishes it, and that can only be done by the one
+     route through, so the letters give nothing away until then. */
   const cellUnder = e => {
     const r = box.getBoundingClientRect();
     if (!r.width || !r.height) return -1;
@@ -619,22 +632,35 @@ function mazeBlock(task){
     const row = Math.floor(((e.clientY - r.top) / r.height) * maze.rows);
     return col >= 0 && col < maze.cols && row >= 0 && row < maze.rows ? row * maze.cols + col : -1;
   };
+  const wallBetween = (from, to) => {
+    const d = to - from, cols = maze.cols;
+    const bit = d === -cols ? WALL.N : d === cols ? WALL.S
+      : d === 1 && to % cols !== 0 ? WALL.E : d === -1 && from % cols !== 0 ? WALL.W : 0;
+    return !bit || (maze.walls[from] & bit);
+  };
   const reach = cell => {
-    if (cell < 0 || traced.length === maze.path.length) return;
-    const next = maze.path[traced.length];
-    const back = traced.length > 1 && cell === traced[traced.length - 2];
-    if (back) traced.pop();                        // dragging back the way they came rubs one out
-    else if (cell !== next) return;
-    else traced.push(cell);
-    draw();
-    if (traced.length === maze.path.length) {
-      const nextProgress = Play.solveMaze(state.progress, task, traced);
-      if (nextProgress !== state.progress) {
-        state.progress = nextProgress;
-        save(); renderSheet();
-        if (navigator.vibrate) { try { navigator.vibrate([30, 50, 30]); } catch(e){} }
-      }
+    if (cell < 0 || Play.isSolved(state.progress, task)) return;
+    if (!trailCells.length) {                      // they have to come in by the way in
+      if (cell !== maze.path[0]) return;
+      trailCells.push(cell);
+    } else {
+      const here = trailCells.at(-1);
+      if (cell === here) return;
+      if (wallBetween(here, cell)) return;         // a wall is a wall
+      if (trailCells.length > 1 && cell === trailCells.at(-2)) trailCells.pop();   // back the way they came
+      else if (trailCells.includes(cell)) return;  // their own trail: nowhere new to go
+      else trailCells.push(cell);
     }
+    seen.add(trailCells.at(-1));
+    // Out at the bottom: in a maze with one way through, that trail is the route.
+    const nextProgress = Play.solveMaze(state.progress, task, trailCells);
+    if (nextProgress !== state.progress) {
+      state.progress = nextProgress;
+      save(); renderSheet();
+      if (navigator.vibrate) { try { navigator.vibrate([30, 50, 30]); } catch(e){} }
+      return;
+    }
+    draw();
   };
   let tracing = false;
   box.addEventListener("pointerdown", e => { tracing = true; box.setPointerCapture?.(e.pointerId); reach(cellUnder(e)); e.preventDefault(); });

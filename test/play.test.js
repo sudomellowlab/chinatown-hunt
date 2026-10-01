@@ -690,7 +690,8 @@ describe("the starting challenge going back to the map", () => {
 });
 
 describe("a maze on a challenge", () => {
-  const maze = { cols: 3, rows: 2, walls: [9, 1, 3, 12, 4, 6], path: [0, 1, 2], letters: "Abc", sentence: "Abc" };
+  const maze = { cols: 3, rows: 2, walls: [9, 1, 3, 12, 4, 6], path: [0, 1, 2], letters: "Abc",
+    grid: "Abc" + "cab", sentence: "Abc" };                 // every square has a letter, decoys included
   const task = { id: "m1", prompt: "Trace it", maze };
   const plain = { id: "m0", prompt: "Nothing here" };
 
@@ -736,6 +737,11 @@ describe("a maze on a challenge", () => {
     assert.deepEqual(Play.mazeProblems(plain), []);
     assert.deepEqual(Play.mazeProblems({ maze: { path: [] } }), ["the maze has no route through it: make it again"]);
     assert.deepEqual(Play.mazeProblems({ maze: { ...maze, sentence: "  " } }), ["the maze has no sentence"]);
+    // Every square must carry a letter, or the wrong turns would give themselves away.
+    const { grid, ...noLetters } = maze;
+    assert.deepEqual(Play.mazeProblems({ maze: noLetters }), ["the maze's squares don't all have a letter: make it again"]);
+    assert.deepEqual(Play.mazeProblems({ maze: { ...maze, grid: "ab" } }), ["the maze's squares don't all have a letter: make it again"]);
+    assert.deepEqual(Play.validateTask({ ...task, maze: noLetters }), ["the maze's squares don't all have a letter: make it again"]);
     assert.deepEqual(Play.mazeProblems({ ...task, answer: { kind: "text", accept: ["x"] } }),
       ["a challenge has either a maze or an answer, not both"]);
     assert.deepEqual(Play.validateTask(task), []);

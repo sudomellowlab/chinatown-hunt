@@ -371,8 +371,10 @@ figure.pic.tappable img{cursor:zoom-in}
 #mazeGrid{display:block;width:100%;height:auto;max-height:70vh;background:#fff;border:1px solid var(--ink);
   touch-action:none;-webkit-user-select:none;user-select:none}
 #mazeGrid .mazewalls line{stroke:var(--ink);stroke-width:.9;stroke-linecap:square}
-#mazeGrid #mazeTrail rect{fill:rgba(46,107,94,.22)}
-#mazeGrid #mazeLetters text{font-family:var(--serif);font-size:5px;fill:var(--ink)}
+#mazeGrid #mazeTrail rect{fill:rgba(22,32,43,.12)}
+#mazeGrid #mazeTrail rect.route{fill:rgba(46,107,94,.3)}
+#mazeGrid #mazeLetters text{font-family:var(--serif);font-size:5px;fill:var(--slate)}
+#mazeGrid #mazeLetters text.route{fill:var(--ink);font-weight:700}
 #mazeGrid #mazeStart{fill:var(--brass)}
 #sheet p.mazesays{font-size:14px;color:var(--slate);margin:8px 0 0}
 #sheet p.mazesays.done{font-size:17px;color:var(--ink);font-weight:600;border-left:3px solid var(--jade);

@@ -765,7 +765,7 @@ function deleteTask(l, i){
 function cleanMaze(task){
   const maze = Play.mazeOf(task);
   return maze ? { maze: { cols: maze.cols, rows: maze.rows, walls: [...maze.walls], path: [...maze.path],
-    letters: maze.letters, sentence: String(maze.sentence ?? "").trim(),
+    letters: maze.letters, grid: maze.grid, sentence: String(maze.sentence ?? "").trim(),
     ...(maze.attempt ? { attempt: maze.attempt } : {}), ...(maze.level ? { level: maze.level } : {}) } } : {};
 }
 function drawMazePreview(box, maze){

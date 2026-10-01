@@ -11,6 +11,8 @@
               means a wall on that side. Neighbours always agree.
      path     the squares of the route in order, as cols*row + col.
      letters  the sentence's letters, one per square of the path.
+     grid     a letter for every square: the sentence's along the route, and decoys everywhere
+              else, so that a letter appearing tells a team nothing about being on the route.
    ════════════════════════════════════════════════════════════════════ */
 const Maze = {
   N: 1, E: 2, S: 4, W: 8,
@@ -159,7 +161,9 @@ const Maze = {
         const walls = Maze.carve(cols, rows, path, random);
         walls[path[0]] &= ~Maze.N;                         // the way in
         walls[path.at(-1)] &= ~Maze.S;                     // and the way out
-        return { cols, rows, walls, path, letters: letters.join(""), sentence: String(sentence).trim(), attempt,
+        return { cols, rows, walls, path, letters: letters.join(""),
+          grid: Maze.fill_grid(cols, rows, path, letters, random),
+          sentence: String(sentence).trim(), attempt,
           level: level in Maze.LEVELS ? level : Maze.DEFAULT_LEVEL };
       }
       // No way through this grid: make it roomier, but never taller than a phone will show.
@@ -170,6 +174,18 @@ const Maze = {
     throw new Error("couldn't lay a route for that sentence; try a shorter one");
   },
 
+  /* A letter for every square. The route carries the sentence; every other square carries a
+     decoy drawn from the same sentence, so the wrong ways look exactly like the right one.
+     Decoys avoid repeating the route's letter where that would give a square away. */
+  fill_grid(cols, rows, path, letters, random){
+    const pool = [...new Set(letters)].filter(c => /\S/.test(c));
+    const grid = new Array(cols * rows).fill("");
+    path.forEach((cell, i) => { grid[cell] = letters[i]; });
+    for (let cell = 0; cell < cols * rows; cell++)
+      if (!grid[cell]) grid[cell] = pool[Math.floor(random() * pool.length)] ?? "?";
+    return grid.join("");
+  },
+
   // Is this a maze the game can draw and trace? Returns a problem in plain words, or null.
   problem(maze){
     if (!maze || typeof maze !== "object") return "the maze is missing";
@@ -178,6 +194,8 @@ const Maze = {
     if (!Array.isArray(walls) || walls.length !== cols * rows) return "the maze's walls don't fit its size";
     if (!Array.isArray(path) || !path.length) return "the maze has no route through it";
     if (typeof letters !== "string" || letters.length !== path.length) return "the maze's letters don't fit its route";
+    const grid = maze.grid;
+    if (typeof grid !== "string" || grid.length !== cols * rows) return "the maze's squares don't all have a letter";
     for (let i = 0; i < path.length; i++) {
       const cell = path[i];
       if (!Number.isInteger(cell) || cell < 0 || cell >= cols * rows) return `square ${i + 1} of the route is outside the maze`;
@@ -185,6 +203,9 @@ const Maze = {
       if (i && (walls[path[i - 1]] & Maze.step(path[i - 1], cell, cols))) return `a wall blocks the route between squares ${i} and ${i + 1}`;
     }
     if (new Set(path).size !== path.length) return "the route crosses itself";
+    // Checked last, once the route's squares are known to be real ones.
+    for (let i = 0; i < path.length; i++)
+      if (grid[path[i]] !== letters[i]) return `square ${i + 1} of the route carries the wrong letter`;
     return null;
   },
 };

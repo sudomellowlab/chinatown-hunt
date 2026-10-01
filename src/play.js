@@ -364,6 +364,8 @@ const Play = {
     const maze = Play.mazeOf(task);
     if (!maze) return ["the maze has no route through it: make it again"];
     if (!Play.mazeSentence(task)) return ["the maze has no sentence"];
+    if (typeof maze.grid !== "string" || maze.grid.length !== maze.cols * maze.rows)
+      return ["the maze's squares don't all have a letter: make it again"];
     if (Play.needsAnswer(task)) return ["a challenge has either a maze or an answer, not both"];
     return [];
   },

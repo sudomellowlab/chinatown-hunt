@@ -133,7 +133,10 @@ first.
 - Maze (optional, per challenge): type a sentence and the panel builds a maze whose only route
   spells it, in through a gap at the top and out through a gap at the bottom. Pick how hard it
   should be (Hard by default): harder means a bigger grid with more false corridors, which
-  wander a long way before dying. Up to about 80 letters, which is what fits a phone. The same
+  wander a long way before dying. Every square carries a letter — the sentence along the route,
+  decoys everywhere else — so teams have to read the walls rather than watch for letters; the
+  route only lights up once they come out at the bottom. Up to about 80 letters, which is what
+  fits a phone. The same
   sentence always gives the same maze (nothing is random), and Try another steps to a different
   one that is just as repeatable. Teams drag a finger from the marked square; each right square shows its letter, a
   wrong one does nothing, and finishing writes the sentence out and opens Next. Try another
@@ -172,7 +175,7 @@ first.
   and both lists. Teams see two buttons, Clues and Suspects, and read one list at a time; neither is
   chosen until they tap one. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 193 unit tests and 134 browser tests, run by CI on every push.
+- 197 unit tests and 134 browser tests, run by CI on every push.
 
 **Live (17 September 2026)**
 - Real content is in: 9 locations, 60 challenges (49 with pictures on
