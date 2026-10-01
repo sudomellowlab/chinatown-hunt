@@ -61,11 +61,20 @@ function applyContent(game){
   for (const k of ["durationMinutes", "revealMinutes"]) if (Number.isFinite(game[k])) GAME[k] = game[k];
   for (const k of ["clues", "suspects"]) if (Array.isArray(game[k])) GAME[k] = structuredClone(game[k]);
   if (game.map && typeof game.map === "object") GAME.map = { ...GAME.map, ...game.map };
+  /* Mazes saved before every square carried a letter get their decoys filled in, not thrown
+     away; the mended draft is written back, so it only happens once. */
+  let mended = false;
+  for (const l of GAME.locations) for (const t of l.tasks || []) {
+    if (!t.maze) continue;
+    const healed = Maze.withLetters(t.maze);
+    if (healed !== t.maze) { t.maze = healed; mended = true; }
+  }
+  if (mended) queueMicrotask(saveDraft);
   if ("start" in game) GAME.start = game.start ? {
     name: game.start.name ?? "", lockText: game.start.lockText ?? "", arrivalText: game.start.arrivalText ?? "", password: game.start.password ?? "",
     // Where it stood before it was promoted, so Send back to the map still knows.
     ...(game.start.from && typeof game.start.from === "object" ? { from: structuredClone(game.start.from) } : {}),
-    tasks: structuredClone(game.start.tasks || []),
+    tasks: structuredClone(game.start.tasks || []).map(t => (t.maze ? { ...t, maze: Maze.withLetters(t.maze) } : t)),
   } : null;
   state.clockMinutes = GAME.durationMinutes;
   fitToLocations();
@@ -763,7 +772,7 @@ function deleteTask(l, i){
    challenge, so the game only has to draw it. The preview shows the route and its letters,
    which is what teams have to find. */
 function cleanMaze(task){
-  const maze = Play.mazeOf(task);
+  const maze = Play.mazeOf(task);          // older mazes were mended when the draft was loaded
   return maze ? { maze: { cols: maze.cols, rows: maze.rows, walls: [...maze.walls], path: [...maze.path],
     letters: maze.letters, grid: maze.grid, sentence: String(maze.sentence ?? "").trim(),
     ...(maze.attempt ? { attempt: maze.attempt } : {}), ...(maze.level ? { level: maze.level } : {}) } } : {};

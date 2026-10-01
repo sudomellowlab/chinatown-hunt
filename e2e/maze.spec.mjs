@@ -304,3 +304,37 @@ test("the maze can be made harder or easier, and the choice sticks", async ({ ap
   await expect(page.locator("#tfMazeLevel")).toHaveValue("fair");
   expect(await squares()).toBe(fair);
 });
+
+test("a maze saved before every square had a letter is mended, not thrown away", async ({ app, page, browser }) => {
+  // Build one, then take the letters out of the saved draft: an older maze, as it would have been kept.
+  const { maze } = await mazeGame(app, page);
+  const before = await page.evaluate(id => {
+    const key = "chinatown-hunt-m1:draft", draft = JSON.parse(localStorage.getItem(key));
+    const task = draft.game.locations.find(l => l.id === id).tasks[0];
+    delete task.maze.grid;
+    localStorage.setItem(key, JSON.stringify(draft));
+    return task.maze;
+  }, THK.id);
+  expect(before.grid).toBeUndefined();
+
+  await page.reload();
+  await app.openTools();
+  await expect(page.locator("#exportInfo")).not.toContainText("letter");
+  await expect(page.locator("#exportGame")).toBeEnabled();
+
+  // The mended maze is the same maze: same walls, same route, same sentence — with letters added.
+  const after = await page.evaluate(id => {
+    const draft = JSON.parse(localStorage.getItem("chinatown-hunt-m1:draft"));
+    return draft.game.locations.find(l => l.id === id).tasks[0].maze;
+  }, THK.id);
+  expect(after.grid.length).toBe(after.cols * after.rows);
+  expect({ ...after, grid: undefined }).toEqual({ ...before, grid: undefined });
+  expect([...after.path].map(c => after.grid[c]).join("")).toBe(after.letters);
+
+  // And it plays: the letters are there on a phone.
+  const html = await exportGame(page);
+  await atTheMaze(browser, html, async (phone) => {
+    await trace(phone, after, after.path.slice(0, 4));
+    await expect(phone.locator("#mazeLetters text")).toHaveCount(4);
+  });
+});

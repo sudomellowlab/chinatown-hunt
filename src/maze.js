@@ -187,6 +187,15 @@ const Maze = {
     return grid.join("");
   },
 
+  /* A maze built before every square carried a letter: fill the decoys in, keeping the walls,
+     the route and the sentence exactly as they were, so nothing has to be made again. */
+  withLetters(maze){
+    if (!maze || !Number.isInteger(maze.cols) || !Array.isArray(maze.path)) return maze;
+    if (typeof maze.grid === "string" && maze.grid.length === maze.cols * maze.rows) return maze;
+    const random = Maze.numbers(`${maze.level ?? Maze.DEFAULT_LEVEL}|${maze.sentence ?? ""}`, maze.attempt ?? 0);
+    return { ...maze, grid: Maze.fill_grid(maze.cols, maze.rows, maze.path, maze.letters ?? "", random) };
+  },
+
   // Is this a maze the game can draw and trace? Returns a problem in plain words, or null.
   problem(maze){
     if (!maze || typeof maze !== "object") return "the maze is missing";

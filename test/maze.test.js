@@ -285,3 +285,27 @@ describe("the shape of the grid", () => {
     assert.ok(junctions(hard) > junctions(widthOf(59, "easy")), "and more than an easy one has");
   });
 });
+
+describe("a maze built before every square had a letter", () => {
+  const made = Maze.build("Sang Nila Utama reigned over it", 0, "fair");
+  const { grid, ...old } = made;                              // as it was saved back then
+
+  test("the letters are filled in, and nothing else is touched", () => {
+    const healed = Maze.withLetters(old);
+    assert.equal(Maze.problem(healed), null);
+    assert.equal(healed.grid.length, healed.cols * healed.rows);
+    for (const key of ["cols", "rows", "path", "letters", "sentence", "attempt", "level"])
+      assert.deepEqual(healed[key], made[key], key);
+    assert.deepEqual(healed.walls, made.walls, "the walls are the same maze");
+  });
+
+  test("filling them in gives the same letters every time", () => {
+    assert.equal(Maze.withLetters(old).grid, Maze.withLetters(old).grid);
+  });
+
+  test("a maze that already has its letters is left alone", () => {
+    assert.equal(Maze.withLetters(made), made);
+    assert.equal(Maze.withLetters(null), null);
+    assert.deepEqual(Maze.withLetters({ nonsense: true }), { nonsense: true });
+  });
+});
