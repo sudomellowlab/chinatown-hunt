@@ -41,14 +41,15 @@ function page(admin, modules) {
 // organiser's password, and unlock.js runs them once that password is typed.
 const template = page(false, [inline("engine.js"), inline("play.js"), inline("pack.js"), inline("vault.js"),
   'const GAME = Pack.open("__GAME_PACK__");', inline("app.js"), inline("unlock.js")]);
-for (const admin of ['id="drawer"', 'id="devbtn"', "setPoi", "Walk.record", "__PARTICIPANT_TEMPLATE__", "__FIELD_TOOLS__", "startPreview", "previewbar", "pvGo",
+// Each marker is distinctive enough not to catch innocent code (setPoi( not setPoi, which is in setPointerCapture).
+for (const admin of ['id="drawer"', 'id="devbtn"', "setPoi(", "Walk.record", "__PARTICIPANT_TEMPLATE__", "__FIELD_TOOLS__", "startPreview", "previewbar", "pvGo",
   "ftPanel", "Field tools", "Pretend to be", "ftRestart"])
   if (template.includes(admin)) throw new Error(`build: admin code leaked into the participant file (${admin})`);
 
 // Admin page: everything, plus the participant page embedded so Export can produce it.
 const templateLiteral = JSON.stringify(template).replace(/</g, "\\u003c");
 const adminPage = page(true, [
-  inline("engine.js"), inline("play.js"), inline("session.js"), inline("poi.js"), inline("pack.js"), inline("vault.js"), inline("game.js"), inline("app.js"),
+  inline("engine.js"), inline("play.js"), inline("session.js"), inline("poi.js"), inline("pack.js"), inline("vault.js"), inline("maze.js"), inline("game.js"), inline("app.js"),
   swap(swap(inline("admin.js"), '"__PARTICIPANT_TEMPLATE__"', templateLiteral, "participant template slot in admin.js"),
     '"__FIELD_TOOLS__"', JSON.stringify(inline("field.js")).replace(/</g, "\\u003c"), "field tools slot in admin.js"),
 ]);

@@ -2,6 +2,7 @@ import { Engine } from "./engine.js";
 import { Walk } from "./session.js";
 import { Poi } from "./poi.js";
 import { Play } from "./play.js";
+import { Maze } from "./maze.js";
 import { Pack } from "./pack.js";
 import { Vault } from "./vault.js";
 import { GAME } from "./game.js";
@@ -562,7 +563,7 @@ const canExport = PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).length === 2 && PAR
 
 /* A challenge is its text, an optional picture and, when the organiser set one, the answer teams
    must give here. Anything else left over from earlier drafts (points, hints) is dropped. */
-const cleanTask = t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { image: t.image } : {}), ...(cleanAnswer(t.answer)), ...cleanDoc(t) });
+const cleanTask = t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { image: t.image } : {}), ...(cleanAnswer(t.answer)), ...cleanDoc(t), ...cleanMaze(t) });
 // A document is its pages in order, with the wording of the button that opens it.
 function cleanDoc(task){
   const pages = Play.docPages(task);
@@ -721,9 +722,9 @@ function renderTasks(){
     li.innerHTML = `<div class="tsum"><span class="tnum"></span><span class="tpts"></span></div><div class="tprompt"></div><div class="tprob"></div>
       <div class="tbtns"><button class="btn tup" title="Move up">↑</button><button class="btn tdown" title="Move down">↓</button><button class="btn tedit">Edit</button><button class="btn warn tdel">Delete</button></div>`;
     li.querySelector(".tnum").textContent = i + 1;
-    const pages = Play.docPages(t).length;
-    li.querySelector(".tpts").textContent = [t.image && "image", pages && `document, ${pages} page${pages === 1 ? "" : "s"}`, answerLabel(t)]
-      .filter(Boolean).join(" · ");
+    const pages = Play.docPages(t).length, maze = Play.mazeOf(t);
+    li.querySelector(".tpts").textContent = [t.image && "image", pages && `document, ${pages} page${pages === 1 ? "" : "s"}`,
+      maze && `maze, ${maze.path.length} letters`, answerLabel(t)].filter(Boolean).join(" · ");
     li.querySelector(".tprompt").textContent = t.prompt || (t.image ? "(picture only)" : "(empty)");
     li.querySelector(".tprob").textContent = problems.join(" · ");
     li.querySelector(".tup").disabled = i === 0;
@@ -756,6 +757,69 @@ function deleteTask(l, i){
   if (editing?.locId === l.id) closeTaskForm();
   saveDraft(); renderTasks();
 }
+
+/* ── a maze, if the challenge has one ──
+   The sentence goes in, a maze comes out: built here once (maze.js) and kept with the
+   challenge, so the game only has to draw it. The preview shows the route and its letters,
+   which is what teams have to find. */
+function cleanMaze(task){
+  const maze = Play.mazeOf(task);
+  return maze ? { maze: { cols: maze.cols, rows: maze.rows, walls: [...maze.walls], path: [...maze.path],
+    letters: maze.letters, sentence: String(maze.sentence ?? "").trim() } } : {};
+}
+function drawMazePreview(box, maze){
+  box.replaceChildren();
+  if (!maze) return;
+  const ns = "http://www.w3.org/2000/svg", size = 10, el = (tag, props) => {
+    const node = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(props)) node.setAttribute(k, v);
+    return node;
+  };
+  const svg = el("svg", { viewBox: `-1 -1 ${maze.cols * size + 2} ${maze.rows * size + 2}`, class: "mazeprev" });
+  maze.path.forEach((cell, i) => {
+    const col = cell % maze.cols, row = Math.floor(cell / maze.cols);
+    svg.append(el("rect", { x: col * size + 0.8, y: row * size + 0.8, width: size - 1.6, height: size - 1.6, rx: 1.2,
+      fill: i === 0 ? "#8A6D2F" : "rgba(46,107,94,.2)" }));
+    const t = el("text", { x: col * size + size / 2, y: row * size + size / 2, "text-anchor": "middle", "dominant-baseline": "central" });
+    t.textContent = maze.letters[i] ?? "";
+    svg.append(t);
+  });
+  for (let cell = 0; cell < maze.cols * maze.rows; cell++) {
+    const col = cell % maze.cols, row = Math.floor(cell / maze.cols), x = col * size, y = row * size, w = maze.walls[cell] ?? 0;
+    const line = (x1, y1, x2, y2) => svg.append(el("line", { x1, y1, x2, y2 }));
+    if (w & Maze.N) line(x, y, x + size, y);
+    if (w & Maze.W) line(x, y, x, y + size);
+    if (row === maze.rows - 1 && (w & Maze.S)) line(x, y + size, x + size, y + size);
+    if (col === maze.cols - 1 && (w & Maze.E)) line(x + size, y, x + size, y + size);
+  }
+  box.append(svg);
+}
+function renderMazeEditor(){
+  const task = editing?.task, maze = Play.mazeOf(task);
+  const typed = $("tfMazeSentence").value.trim();
+  const info = $("tfMazeInfo");
+  const problems = task ? Play.mazeProblems(task) : [];
+  info.textContent = problems.length ? problems.map(p => "• " + p).join("\n")
+    : !maze ? (typed ? `Make the maze to use this sentence.`
+        : "No maze. Type the sentence the route should spell, then Make the maze.")
+    : maze.sentence !== typed ? "The sentence has changed: Make the maze again to use it."
+    : `${maze.cols} × ${maze.rows} squares, ${maze.path.length} letters. Teams start on the gold square and trace the route; the letters appear as they go.`;
+  info.classList.toggle("bad", problems.length > 0);
+  $("tfMazeAnother").hidden = !maze;
+  $("tfMazeRemove").hidden = !maze;
+  drawMazePreview($("tfMazePrev"), maze);
+}
+function makeMaze(){
+  const task = editing?.task; if (!task) return;
+  try { task.maze = Maze.build($("tfMazeSentence").value); }
+  catch(e){ delete task.maze; $("tfMazeInfo").textContent = `Can't make a maze: ${e.message}.`; $("tfMazeInfo").classList.add("bad"); drawMazePreview($("tfMazePrev"), null); return; }
+  $("tfErrors").textContent = "";
+  renderMazeEditor();
+}
+$("tfMazeMake").onclick = makeMaze;
+$("tfMazeAnother").onclick = makeMaze;
+$("tfMazeRemove").onclick = () => { if (editing?.task) delete editing.task.maze; renderMazeEditor(); };
+$("tfMazeSentence").addEventListener("input", renderMazeEditor);
 
 /* ── the answer a challenge asks for, if any ──
    Text (with * standing for anything), a number, or multiple choice. Used by the
@@ -852,6 +916,8 @@ function openTaskForm(l, index){
   $("tfDocLabel").value = t.doc?.label || "";
   $("tfDocPages").value = Play.docPages(t).join("\n");
   renderDocInfo();
+  $("tfMazeSentence").value = Play.mazeSentence(t);
+  renderMazeEditor();
   // The answer is edited on the copy; Save puts it into the game with the rest.
   $("tfAnswer").replaceChildren(answerEditor(t, () => { $("tfErrors").textContent = ""; }));
   $("tfErrors").textContent = "";
@@ -867,7 +933,7 @@ function readTaskForm(){
   const t = { prompt: $("tfPrompt").value.trim() };
   const image = $("tfImage").value.trim();
   if (image) t.image = image;
-  return { ...t, ...cleanAnswer(editing?.task?.answer), ...cleanDoc(docFromForm()) };
+  return { ...t, ...cleanAnswer(editing?.task?.answer), ...cleanDoc(docFromForm()), ...cleanMaze(editing?.task) };
 }
 // The document as the form has it: the pages typed one per line, and the button's wording.
 function docFromForm(){

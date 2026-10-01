@@ -20,7 +20,7 @@ test("the participant file has no admin tools, even with ?dev=1", async ({ app, 
 
   // Not hidden but absent: none of the admin code is in the file.
   const html = readFileSync(PLAY_FILE, "utf8");
-  for (const code of ["setPoi", "Walk.record", "stepReplay", "exportGame", "Poi.parseCoords"]) expect(html).not.toContain(code);
+  for (const code of ["setPoi(", "Walk.record", "stepReplay", "exportGame", "Poi.parseCoords", "Maze.build"]) expect(html).not.toContain(code);
 });
 
 test("the participant file's source gives away no game content", async () => {

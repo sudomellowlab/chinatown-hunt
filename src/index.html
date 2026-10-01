@@ -221,6 +221,15 @@ body.preview #sheet{padding-top:62px}
       <label class="stack">Image link <span class="note inline">optional, https:// on your server</span>
         <input type="text" id="tfImage" class="imglink" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/picture.jpg"></label>
       <div class="imgprev" id="tfImagePrev"></div>
+      <label class="stack">Maze <span class="note inline">optional: teams trace the route with a finger and the letters appear</span>
+        <input type="text" id="tfMazeSentence" class="plain" autocomplete="off" placeholder="The sentence the route spells"></label>
+      <div class="row">
+        <button class="btn" id="tfMazeMake" type="button">Make the maze</button>
+        <button class="btn" id="tfMazeAnother" type="button">Try another</button>
+        <button class="btn warn" id="tfMazeRemove" type="button">Remove</button>
+      </div>
+      <div class="note" id="tfMazeInfo"></div>
+      <div id="tfMazePrev"></div>
       <label class="stack">Document <span class="note inline">optional: a handout teams read in the game, one picture per page</span>
         <input type="text" id="tfDocLabel" class="plain" autocomplete="off" placeholder="Button wording, e.g. Open the notebook"></label>
       <textarea id="tfDocPages" class="prose" rows="3" placeholder="https://…/page-1.jpg&#10;https://…/page-2.jpg"></textarea>

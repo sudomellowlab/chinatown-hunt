@@ -542,6 +542,109 @@ function taskPicture(task){
   return pic;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   MAZE — a grid with one route through it, spelling a sentence a letter
+   per square. The team drags a finger along the route and each square it
+   reaches shows its letter; a wrong square does nothing, so they can feel
+   their way. Reaching the end finishes the challenge, the way a right
+   answer does, and the sentence is written out underneath.
+   The maze itself is built in the admin file (maze.js) and carried with
+   the challenge; the game only draws it.
+   ════════════════════════════════════════════════════════════════════ */
+const SVG = "http://www.w3.org/2000/svg";
+const svg = (tag, props = {}) => {
+  const el = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(props)) el.setAttribute(k, v);
+  return el;
+};
+const WALL = { N: 1, E: 2, S: 4, W: 8 };
+
+function mazeBlock(task){
+  const maze = Play.mazeOf(task);
+  if (!maze) return { solved: true, node: null };
+  const done = Play.isSolved(state.progress, task);
+  const size = 10, pad = 0.6;                       // drawn in grid units; the SVG scales to the screen
+  const box = svg("svg", { id:"mazeGrid", viewBox:`${-pad} ${-pad} ${maze.cols * size + pad * 2} ${maze.rows * size + pad * 2}`,
+    role:"img", "aria-label":"Maze: trace the route with your finger" });
+  const at = cell => ({ col: cell % maze.cols, row: Math.floor(cell / maze.cols) });
+
+  // The squares the team has reached so far, in order; a finished maze shows the lot.
+  let traced = done ? [...maze.path] : [];
+  const trail = svg("g", { id:"mazeTrail" });
+  const letters = svg("g", { id:"mazeLetters" });
+  box.append(trail, letters);
+
+  // Walls.
+  const lines = svg("g", { class:"mazewalls" });
+  for (let cell = 0; cell < maze.cols * maze.rows; cell++) {
+    const { col, row } = at(cell), x = col * size, y = row * size, w = maze.walls[cell] ?? 0;
+    const edge = (x1, y1, x2, y2) => lines.append(svg("line", { x1, y1, x2, y2 }));
+    if (w & WALL.N) edge(x, y, x + size, y);
+    if (w & WALL.W) edge(x, y, x, y + size);
+    if (row === maze.rows - 1 && (w & WALL.S)) edge(x, y + size, x + size, y + size);
+    if (col === maze.cols - 1 && (w & WALL.E)) edge(x + size, y, x + size, y + size);
+  }
+  box.append(lines);
+  // Where to start, marked, so nobody hunts for the way in. Kept as a reference, not looked up:
+  // the maze isn't on the page yet while it's being built.
+  const first = at(maze.path[0]);
+  const startMark = svg("circle", { id:"mazeStart", cx:first.col * size + size / 2, cy:first.row * size + size / 2, r:size * 0.3 });
+  box.append(startMark);
+
+  const told = h("p", { id:"mazeSays", class:"mazesays", role:"status" });
+  function draw(){
+    trail.replaceChildren(...traced.map(cell => {
+      const { col, row } = at(cell);
+      return svg("rect", { x:col * size + 0.8, y:row * size + 0.8, width:size - 1.6, height:size - 1.6, rx:1.2 });
+    }));
+    letters.replaceChildren(...traced.map((cell, i) => {
+      const { col, row } = at(cell);
+      const t = svg("text", { x:col * size + size / 2, y:row * size + size / 2, "text-anchor":"middle", "dominant-baseline":"central" });
+      t.textContent = maze.letters[i] ?? "";
+      return t;
+    }));
+    startMark.toggleAttribute("hidden", traced.length > 0);
+    const finished = traced.length === maze.path.length;
+    told.textContent = finished ? (Play.mazeSentence(task) || maze.letters)
+      : traced.length ? `${traced.length} of ${maze.path.length} squares` : "Start on the marked square and drag along the route.";
+    told.classList.toggle("done", finished);
+  }
+
+  /* Dragging: whichever square is under the finger, if it's the next one on the route (or the
+     start), is added. Anything else is ignored, so a slip costs nothing. */
+  const cellUnder = e => {
+    const r = box.getBoundingClientRect();
+    if (!r.width || !r.height) return -1;
+    const col = Math.floor(((e.clientX - r.left) / r.width) * maze.cols);
+    const row = Math.floor(((e.clientY - r.top) / r.height) * maze.rows);
+    return col >= 0 && col < maze.cols && row >= 0 && row < maze.rows ? row * maze.cols + col : -1;
+  };
+  const reach = cell => {
+    if (cell < 0 || traced.length === maze.path.length) return;
+    const next = maze.path[traced.length];
+    const back = traced.length > 1 && cell === traced[traced.length - 2];
+    if (back) traced.pop();                        // dragging back the way they came rubs one out
+    else if (cell !== next) return;
+    else traced.push(cell);
+    draw();
+    if (traced.length === maze.path.length) {
+      const nextProgress = Play.solveMaze(state.progress, task, traced);
+      if (nextProgress !== state.progress) {
+        state.progress = nextProgress;
+        save(); renderSheet();
+        if (navigator.vibrate) { try { navigator.vibrate([30, 50, 30]); } catch(e){} }
+      }
+    }
+  };
+  let tracing = false;
+  box.addEventListener("pointerdown", e => { tracing = true; box.setPointerCapture?.(e.pointerId); reach(cellUnder(e)); e.preventDefault(); });
+  box.addEventListener("pointermove", e => { if (tracing) { reach(cellUnder(e)); e.preventDefault(); } });
+  for (const end of ["pointerup", "pointercancel", "pointerleave"]) box.addEventListener(end, () => { tracing = false; });
+
+  draw();
+  return { solved: done, node: h("div", { id:"mazeBox", class:`maze${done ? " solved" : ""}` }, box, told) };
+}
+
 /* A challenge's answer, when it has one: a box to type in, or the options to tap.
    Two ways of moving on, set per challenge by the organiser:
      "correct" – Next stays disabled until the answer is right; a wrong try says so.
@@ -611,17 +714,18 @@ function renderSheet(){
     );
   } else {
     const { task, index, total, last } = stage;
-    const answer = answerBlock(task);
+    const answer = answerBlock(task), maze = mazeBlock(task);
     fill(body,
       closingNote,
       taskPicture(task),
       task.prompt ? h("p", { id:"prompt", class:"prompt" }, linked(task.prompt)) : null,
       docButton(task),
+      maze.node,
       answer.node,
       h("div", { class:"navrow" },
         h("button", { id:"backBtn", class:"secondary", onclick: () => move(Play.back) }, "Back"),
-        last ? h("button", { id:"finishBtn", class:"primary", disabled: !answer.solved, onclick: finishActive }, finishLabel)
-             : h("button", { id:"nextBtn", class:"primary", disabled: !answer.solved, onclick: () => move(Play.next) }, "Next")),
+        last ? h("button", { id:"finishBtn", class:"primary", disabled: !(answer.solved && maze.solved), onclick: finishActive }, finishLabel)
+             : h("button", { id:"nextBtn", class:"primary", disabled: !(answer.solved && maze.solved), onclick: () => move(Play.next) }, "Next")),
     );
   }
   $("sheet").classList.add("up");
@@ -701,17 +805,18 @@ function renderStartChallenge(){
       fill(body, s.arrivalText ? h("p", { id:"sheettext" }, linked(s.arrivalText)) : null, h("div", { class:"navrow" }, finish));
     } else {
       const { task, index, total, last } = stage;
-      const answer = answerBlock(task);
-      if (last) finish.disabled = !answer.solved;
+      const answer = answerBlock(task), maze = mazeBlock(task);
+      if (last) finish.disabled = !(answer.solved && maze.solved);
       fill(body,
         index === 0 && s.arrivalText ? h("p", { id:"sheettext" }, linked(s.arrivalText)) : null,
         taskPicture(task),
         task.prompt ? h("p", { id:"prompt", class:"prompt" }, linked(task.prompt)) : null,
         docButton(task),
+        maze.node,
         answer.node,
         h("div", { class:"navrow" },
           index > 0 ? h("button", { id:"backBtn", class:"secondary", onclick: () => move(Play.back) }, "Back") : null,
-          last ? finish : h("button", { id:"nextBtn", class:"primary", disabled: !answer.solved, onclick: () => move(Play.next) }, "Next")),
+          last ? finish : h("button", { id:"nextBtn", class:"primary", disabled: !(answer.solved && maze.solved), onclick: () => move(Play.next) }, "Next")),
       );
     }
   }

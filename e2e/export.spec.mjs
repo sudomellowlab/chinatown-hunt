@@ -29,7 +29,8 @@ test("the exported file plays the game as set up in the admin panel, on a phone"
   expect(name).toBe("chinatown-hunt.html");
   expect(html).toContain('data-build="play"');
   for (const secret of ["Thian Hock Keng", "Heavenly Happiness", String(lat), String(lng)]) expect(html).not.toContain(secret);
-  for (const tool of ['id="drawer"', 'id="devbtn"', "setPoi", "Walk.record"]) expect(html).not.toContain(tool);
+  // "setPoi(" not "setPoi", which is the start of setPointerCapture — the game's own code.
+  for (const tool of ['id="drawer"', 'id="devbtn"', "setPoi(", "Walk.record"]) expect(html).not.toContain(tool);
 
   // ── Participant, on a phone, with the exported file.
   const phone = await browser.newContext({ ...devices["Pixel 7"] });

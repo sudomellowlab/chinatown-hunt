@@ -130,6 +130,10 @@ first.
   Finish location on the last; the admin editor to add, edit, reorder and delete them.
 - Pictures on a challenge can be tapped to fill the screen, pinched to zoom (up to 5×) and
   dragged around; tapping the picture itself jumps to 2.5× and back.
+- Maze (optional, per challenge): type a sentence and the panel builds a maze whose only route
+  spells it. Teams drag a finger from the marked square; each right square shows its letter, a
+  wrong one does nothing, and finishing writes the sentence out and opens Next. Try another
+  builds a different maze from the same sentence.
 - Documents (optional, per challenge): a handout teams read in the game, one picture per page
   (export each PDF page as a JPG and list the links in order). A button opens it over the
   challenge; page buttons, a Page N of M list, swipe and tap-to-zoom; Close returns to the
@@ -164,7 +168,7 @@ first.
   and both lists. Teams see two buttons, Clues and Suspects, and read one list at a time; neither is
   chosen until they tap one. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 170 unit tests and 129 browser tests, run by CI on every push.
+- 187 unit tests and 132 browser tests, run by CI on every push.
 
 **Live (17 September 2026)**
 - Real content is in: 9 locations, 60 challenges (49 with pictures on

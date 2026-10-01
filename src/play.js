@@ -88,7 +88,23 @@ const Play = {
     return Play.accepted(a).some(x => Play.matchesPattern(x, typed));
   },
   solvedAnswer(progress, task){ return task ? progress.solved?.[task.id] : undefined; },
-  isSolved(progress, task){ return !Play.needsAnswer(task) || Play.solvedAnswer(progress, task) !== undefined; },
+  isSolved(progress, task){ return !Play.mustFinish(task) || Play.solvedAnswer(progress, task) !== undefined; },
+
+  /* ── a maze ──
+     A challenge may instead carry `maze`: a grid the game draws, with one route through it
+     spelling a sentence. Teams trace it with a finger and the letters appear; tracing it to the
+     end is what moves them on, the way a right answer does. See maze.js for the shape of it. */
+  mazeOf(task){ return task?.maze && Array.isArray(task.maze.path) && task.maze.path.length ? task.maze : null; },
+  mazeSentence(task){ return String(Play.mazeOf(task)?.sentence ?? "").trim(); },
+  // Does this challenge keep the team until they've done something here?
+  mustFinish(task){ return Play.needsAnswer(task) || !!Play.mazeOf(task); },
+  // Traced to the end: remember it, with the sentence as what they gave.
+  solveMaze(progress, task, traced){
+    const maze = Play.mazeOf(task);
+    if (!maze || !Array.isArray(traced) || traced.length !== maze.path.length) return progress;
+    if (traced.some((cell, i) => cell !== maze.path[i])) return progress;
+    return { ...progress, solved: { ...progress.solved, [task.id]: Play.mazeSentence(task) || maze.letters } };
+  },
   /* Record an answer and let the team move on. In "correct" mode only a right answer counts;
      in "any" mode anything they actually gave counts, right or wrong, and they aren't told which. */
   solve(progress, task, typed){
@@ -107,7 +123,7 @@ const Play = {
   },
   // Dev shortcuts (admin file only) use this to step past a challenge that wants an answer.
   markSolved(progress, task){
-    return Play.needsAnswer(task) && !Play.isSolved(progress, task)
+    return Play.mustFinish(task) && !Play.isSolved(progress, task)
       ? { ...progress, solved: { ...progress.solved, [task.id]: "(skipped in testing)" } } : progress;
   },
   /* May the team leave the challenge they are looking at? Only once it's answered,
@@ -341,6 +357,17 @@ const Play = {
     return (Array.isArray(pages) ? pages : []).map(p => String(p ?? "").trim()).filter(Boolean);
   },
   docLabel(task){ return String(task?.doc?.label ?? "").trim() || Play.DOC_LABEL; },
+  /* Problems with a challenge's maze, in plain words. No maze at all is fine. The maze itself is
+     checked by maze.js, which the game doesn't carry; what's checked here is what it's for. */
+  mazeProblems(task){
+    if (task?.maze == null) return [];
+    const maze = Play.mazeOf(task);
+    if (!maze) return ["the maze has no route through it: make it again"];
+    if (!Play.mazeSentence(task)) return ["the maze has no sentence"];
+    if (Play.needsAnswer(task)) return ["a challenge has either a maze or an answer, not both"];
+    return [];
+  },
+
   // Problems with a challenge's document, in plain words. No document at all is fine.
   docProblems(task){
     const d = task?.doc;
@@ -395,6 +422,7 @@ const Play = {
     problems.push(...Play.linkProblems(task.prompt));
     problems.push(...Play.answerProblems(task));
     problems.push(...Play.docProblems(task));
+    problems.push(...Play.mazeProblems(task));
     return problems;
   },
 

@@ -3,7 +3,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // Participants play on phones; admins set locations and replay walks on a computer.
-const ADMIN = /(locations|export|editor|mystery|setup|preview|field|start|answers|document)\.spec\.mjs$/;
+const ADMIN = /(locations|export|editor|mystery|setup|preview|field|start|answers|document|maze)\.spec\.mjs$/;
 
 export default defineConfig({
   testDir: "e2e",

@@ -688,3 +688,57 @@ describe("the starting challenge going back to the map", () => {
     assert.deepEqual(again.location, built);
   });
 });
+
+describe("a maze on a challenge", () => {
+  const maze = { cols: 3, rows: 2, walls: [9, 1, 3, 12, 4, 6], path: [0, 1, 2], letters: "Abc", sentence: "Abc" };
+  const task = { id: "m1", prompt: "Trace it", maze };
+  const plain = { id: "m0", prompt: "Nothing here" };
+
+  test("a challenge with a maze keeps the team until it's traced", () => {
+    assert.equal(Play.mazeOf(task), maze);
+    assert.equal(Play.mustFinish(task), true);
+    assert.equal(Play.isSolved(Play.emptyProgress(), task), false);
+    assert.equal(Play.mustFinish(plain), false);
+    assert.equal(Play.mazeOf(plain), null);
+    assert.equal(Play.mazeOf({ maze: { path: [] } }), null, "a maze with no route is no maze");
+  });
+
+  test("only the whole route, in order, finishes it", () => {
+    const p0 = Play.emptyProgress();
+    assert.equal(Play.solveMaze(p0, task, [0, 1]), p0, "half way is not done");
+    assert.equal(Play.solveMaze(p0, task, [0, 1, 2, 2]), p0, "nor is a square too many");
+    assert.equal(Play.solveMaze(p0, task, [0, 2, 1]), p0, "nor the right squares out of order");
+    assert.equal(Play.solveMaze(p0, task, []), p0);
+    assert.equal(Play.solveMaze(p0, task, null), p0);
+    assert.equal(Play.solveMaze(p0, plain, [0]), p0, "a challenge with no maze can't be traced");
+
+    const done = Play.solveMaze(p0, task, [0, 1, 2]);
+    assert.equal(Play.isSolved(done, task), true);
+    assert.equal(done.solved.m1, "Abc", "the sentence is what they gave");
+    assert.equal(Play.solvedAnswer(done, task), "Abc");
+  });
+
+  test("tracing it lets the team move on, like a right answer", () => {
+    const where = { id: "quiz", name: "Quiz stop", ...at, tasks: [task, t1] };
+    let p = Play.next(Play.activate(Play.emptyProgress(), "quiz"), where);
+    assert.equal(Play.canAdvance(where, p), false);
+    assert.equal(Play.next(p, where), p, "Next does nothing until it's traced");
+    p = Play.solveMaze(p, task, maze.path);
+    assert.equal(Play.canAdvance(where, p), true);
+    assert.equal(Play.stage(where, Play.next(p, where)).task, t1);
+  });
+
+  test("a testing shortcut steps past a maze too", () => {
+    assert.equal(Play.isSolved(Play.markSolved(Play.emptyProgress(), task), task), true);
+  });
+
+  test("the game is checked for mazes that can't be traced", () => {
+    assert.deepEqual(Play.mazeProblems(plain), []);
+    assert.deepEqual(Play.mazeProblems({ maze: { path: [] } }), ["the maze has no route through it: make it again"]);
+    assert.deepEqual(Play.mazeProblems({ maze: { ...maze, sentence: "  " } }), ["the maze has no sentence"]);
+    assert.deepEqual(Play.mazeProblems({ ...task, answer: { kind: "text", accept: ["x"] } }),
+      ["a challenge has either a maze or an answer, not both"]);
+    assert.deepEqual(Play.validateTask(task), []);
+    assert.deepEqual(Play.validateTask({ ...task, maze: { path: [] } }), ["the maze has no route through it: make it again"]);
+  });
+});
