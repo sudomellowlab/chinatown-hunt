@@ -565,9 +565,11 @@ function mazeBlock(task){
       if (next === state.progress) return;
       state.progress = next;
       save(); renderSheet();
+      // The sentence appears under the maze, which on a phone is often below the fold: show it.
+      $("mazeSays")?.scrollIntoView({ block: "center" });
     },
   });
-  return { solved: done, node: h("div", { id:"mazeBox", class:`maze${done ? " solved" : ""}` }, view.grid, view.says) };
+  return { solved: done, node: h("div", { id:"mazeBox", class:`maze${done ? " solved" : ""}` }, view.grid, view.buttons, view.says) };
 }
 
 /* A challenge's answer, when it has one: a box to type in, or the options to tap.

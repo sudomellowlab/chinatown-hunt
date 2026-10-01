@@ -12,7 +12,7 @@
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
-html,body{height:100%;margin:0}
+html,body{height:100%;margin:0;overscroll-behavior:none}
 body{
   font-family:var(--serif);
   color:var(--ink);
@@ -382,3 +382,13 @@ figure.pic.tappable img{cursor:zoom-in}
 #tfMazePrev svg.mazeprev{display:block;width:100%;height:auto;max-height:40vh;background:#fff;border:1px solid var(--ink);margin-top:8px}
 #tfMazePrev svg.mazeprev line{stroke:var(--ink);stroke-width:.9;stroke-linecap:square}
 #tfMazePrev svg.mazeprev text{font-family:var(--serif);font-size:5px;fill:var(--ink)}
+#mazeGrid #mazeHead{fill:none;stroke:var(--brass);stroke-width:1.1}
+.mazebtns{display:flex;gap:10px;margin-top:8px}
+#sheet .mazebtns button.mazebtn{flex:1;margin-top:0;min-height:44px;font-size:15px;
+  background:transparent;color:var(--ink);border:1px solid var(--ink)}
+#sheet .mazebtns button.mazebtn:disabled{opacity:.4}
+/* While a finger is walking the maze, nothing else on the page moves under it: no scrolling the
+   challenge away mid-trace, and no pull-to-refresh. The sheet keeps `overflow:auto` (taking it
+   away could jump the maze out from under the finger); touch-action is what stops the scrolling. */
+body.mazetracing{touch-action:none;overscroll-behavior:none}
+body.mazetracing #sheet{touch-action:none}

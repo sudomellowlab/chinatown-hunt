@@ -17,11 +17,12 @@ async function exportGame(page) {
 }
 /* Build a maze on the temple's first challenge, export the game, and read the maze back out of
    the admin panel's own draft — the game file keeps the route to itself, as it should. */
-async function mazeGame(app, page, sentence = SENTENCE) {
+async function mazeGame(app, page, sentence = SENTENCE, prompt = "") {
   await app.open();
   await app.openTools();
   await page.locator("#capTarget").selectOption(THK.id);
   await page.locator("#taskList li").first().locator(".tedit").click();
+  if (prompt) await page.locator("#tfPrompt").fill(prompt);
   await page.locator("#tfMazeSentence").fill(sentence);
   await page.locator("#tfMazeMake").click();
   await expect(page.locator("#tfMazeInfo")).toContainText("squares");
@@ -66,6 +67,20 @@ async function trace(page, maze, cells) {
     const p = point(cell);
     await page.mouse.move(p.x, p.y, { steps: 3 });
   }
+  await page.mouse.up();
+}
+
+/* A finger moving quickly: one pointer event every few squares, with nothing in between, which
+   is what a phone really reports (Playwright's `steps` would otherwise fill the gaps in for us). */
+async function flick(page, maze, cells) {
+  const box = await page.locator("#mazeGrid").boundingBox();
+  const point = cell => ({
+    x: box.x + ((cell % maze.cols) + 0.5) * (box.width / maze.cols),
+    y: box.y + (Math.floor(cell / maze.cols) + 0.5) * (box.height / maze.rows),
+  });
+  await page.mouse.move(point(cells[0]).x, point(cells[0]).y);
+  await page.mouse.down();
+  for (const cell of cells.slice(1)) await page.mouse.move(point(cell).x, point(cell).y);
   await page.mouse.up();
 }
 
@@ -394,4 +409,85 @@ test("a maze can be exported on its own, for someone else to try", async ({ app,
   } finally {
     await phone.close();
   }
+});
+
+test("a quick drag keeps up with the finger, and getting it wrong is easy to undo", async ({ app, page, browser }) => {
+  const { html, maze } = await mazeGame(app, page, "Sang Nila Utama reigned over it and was given the name of Seri Teri Buana");
+
+  await atTheMaze(browser, html, async (phone) => {
+    const trail = () => phone.locator("#mazeTrail rect");
+    const letters = () => phone.locator("#mazeLetters text");
+    await expect(phone.locator("#mazeUndo")).toBeDisabled();
+    await expect(phone.locator("#mazeRestart")).toBeDisabled();
+
+    /* A fast finger reports its position every third square or so. The trail follows the corridor
+       between those points instead of the straight line, which would cut corners into walls —
+       so the walk keeps up with the finger instead of stalling where it hurried. */
+    await flick(phone, maze, maze.path.slice(0, 10).filter((_, i) => i % 3 === 0));
+    await expect(trail()).toHaveCount(10);
+    await expect(letters()).toHaveCount(10);
+    // Where they are now is marked, so a lifted finger can pick the thread up again.
+    const head = await phone.locator("#mazeHead").evaluate(el => ({ x: +el.getAttribute("x"), y: +el.getAttribute("y") }));
+    expect(head).toEqual({ x: (maze.path[9] % maze.cols) * 10 + 0.8, y: Math.floor(maze.path[9] / maze.cols) * 10 + 0.8 });
+
+    // Touching anywhere already walked rewinds to there: no shuffling back out of a dead end.
+    await trace(phone, maze, [maze.path[4]]);
+    await expect(trail()).toHaveCount(5);
+    await expect(letters()).toHaveCount(10, "the letters they've seen stay seen");
+
+    // Step back gives up one square at a time, and Start again clears the walk.
+    await phone.locator("#mazeUndo").click();
+    await expect(trail()).toHaveCount(4);
+    await phone.locator("#mazeRestart").click();
+    await expect(trail()).toHaveCount(0);
+    await expect(letters()).toHaveCount(0);
+    await expect(phone.locator("#mazeStart")).toBeVisible();
+    await expect(phone.locator("#mazeHead")).toBeHidden();
+    await expect(phone.locator("#mazeUndo")).toBeDisabled();
+
+    /* Putting a finger down far from the walk does nothing: the corridor is only followed while
+       the finger is moving, so nobody can tap their way through. */
+    await trace(phone, maze, [maze.path[0]]);
+    await trace(phone, maze, [maze.path[4]]);
+    await expect(trail()).toHaveCount(1);
+
+    // Nothing else on the page moves while a finger is on the maze, and no pull-to-refresh.
+    const box = await phone.locator("#mazeGrid").boundingBox();
+    await phone.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await phone.mouse.down();
+    await expect(phone.locator("body")).toHaveClass(/mazetracing/);
+    expect(await phone.evaluate(() => [getComputedStyle(document.body).touchAction,
+      getComputedStyle(document.body).overscrollBehaviorY,
+      getComputedStyle(document.getElementById("sheet")).touchAction])).toEqual(["none", "none", "none"]);
+    await phone.mouse.up();
+    await expect(phone.locator("body")).not.toHaveClass(/mazetracing/);
+    expect(await phone.evaluate(() => getComputedStyle(document.getElementById("sheet")).overflowY))
+      .toBe("auto", "the sheet still scrolls once the finger is off the maze");
+
+    // Done, there is nothing left to undo.
+    await trace(phone, maze, maze.path);
+    await expect(phone.locator("#mazeSays")).toContainText("Seri Teri Buana");
+    await expect(phone.locator("#mazeButtons")).toBeHidden();
+    await expect(phone.locator("#mazeHead")).toBeHidden();
+  });
+});
+
+test("the sheet doesn't scroll out from under a finger walking the maze", async ({ app, page, browser }) => {
+  // A wordy challenge, so the maze sits below the fold and the sheet really is scrolled.
+  const { html, maze } = await mazeGame(app, page, SENTENCE, `Read this carefully. ${"The temple keeps its own records. ".repeat(20)}`);
+  await atTheMaze(browser, html, async (phone) => {
+    await phone.locator("#mazeGrid").scrollIntoViewIfNeeded();
+    const where = () => phone.locator("#sheet").evaluate(el => el.scrollTop);
+    const before = await where();
+    expect(before, "the sheet is scrolled down to the maze").toBeGreaterThan(0);
+    await flick(phone, maze, maze.path.slice(0, 7).filter((_, i) => i % 2 === 0));
+    expect(await where(), "the sheet stayed where it was").toBe(before);
+    await expect(phone.locator("#mazeTrail rect")).toHaveCount(7);
+
+    // Out at the bottom: the sentence is brought into view, along with the way on.
+    await trace(phone, maze, maze.path);
+    await expect(phone.locator("#mazeSays")).toHaveText(SENTENCE);
+    await expect(phone.locator("#mazeSays")).toBeInViewport();
+    await expect(phone.locator("#nextBtn")).toBeInViewport();
+  });
 });

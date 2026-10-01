@@ -43,7 +43,8 @@ const MazeView = {
     const seen = new Set(trail);
     const trailLayer = el("g", { id: "mazeTrail" });
     const letterLayer = el("g", { id: "mazeLetters" });
-    grid.append(trailLayer, letterLayer);
+    const headMark = el("rect", { id: "mazeHead", width: size - 1.6, height: size - 1.6, rx: 1.2, hidden: "" });
+    grid.append(trailLayer, letterLayer, headMark);
 
     const lines = el("g", { class: "mazewalls" });
     for (let cell = 0; cell < maze.cols * maze.rows; cell++) {
@@ -65,6 +66,21 @@ const MazeView = {
     says.className = "mazesays";
     says.setAttribute("role", "status");
 
+    /* Walking back out of a dead end square by square is fiddly on a phone, so: a step-back
+       button, a fresh start, and touching anywhere on the trail already walked rewinds to it. */
+    const button = (id, text, onclick) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.id = id; b.className = "mazebtn"; b.textContent = text;
+      b.addEventListener("click", onclick);
+      return b;
+    };
+    const undo = button("mazeUndo", "Step back", () => { if (trail.length > 1) { trail.pop(); redraw(); } });
+    const restart = button("mazeRestart", "Start the walk again", () => { trail = []; seen.clear(); redraw(); });
+    const buttons = document.createElement("div");
+    buttons.id = "mazeButtons";
+    buttons.className = "mazebtns";
+    buttons.append(undo, restart);
+
     function redraw(nowSolved = done){
       done = !!nowSolved;
       // The way back from the entrance, and the route itself once they're out.
@@ -84,6 +100,17 @@ const MazeView = {
         return t;
       }));
       startMark.toggleAttribute("hidden", seen.size > 0);
+      // Where they are now, so a lifted finger can pick the thread back up.
+      const head = done ? null : trail.at(-1);
+      headMark.toggleAttribute("hidden", head == null);
+      if (head != null) {
+        const { col, row } = at(head);
+        headMark.setAttribute("x", col * size + 0.8);
+        headMark.setAttribute("y", row * size + 0.8);
+      }
+      undo.disabled = done || trail.length < 2;
+      restart.disabled = done || !trail.length;
+      buttons.hidden = done;
       says.textContent = done ? (String(sentence || "").trim() || maze.letters)
         : seen.size ? MazeView.LEAD_ON : MazeView.LEAD_IN;
       says.classList.toggle("done", done);
@@ -93,20 +120,46 @@ const MazeView = {
        with no wall between — is walked into, right way or wrong; dragging back the way it came
        retreats. Only coming out at the bottom finishes it, and that can only be done by the one
        route through, so the letters give nothing away until then. */
-    const cellUnder = e => {
+    const cellAt = (clientX, clientY) => {
       const r = grid.getBoundingClientRect();
       if (!r.width || !r.height) return -1;
-      const col = Math.floor(((e.clientX - r.left) / r.width) * maze.cols);
-      const row = Math.floor(((e.clientY - r.top) / r.height) * maze.rows);
+      const col = Math.floor(((clientX - r.left) / r.width) * maze.cols);
+      const row = Math.floor(((clientY - r.top) / r.height) * maze.rows);
       return col >= 0 && col < maze.cols && row >= 0 && row < maze.rows ? row * maze.cols + col : -1;
     };
+    const cellUnder = e => cellAt(e.clientX, e.clientY);
     const wallBetween = (from, to) => {
       const d = to - from, cols = maze.cols;
       const bit = d === -cols ? WALL.N : d === cols ? WALL.S
         : d === 1 && to % cols !== 0 ? WALL.E : d === -1 && from % cols !== 0 ? WALL.W : 0;
       return !bit || (maze.walls[from] & bit);
     };
-    const reach = cell => {
+    const neighbours = cell => [cell - maze.cols, cell + maze.cols, cell - 1, cell + 1]
+      .filter(n => n >= 0 && n < maze.cols * maze.rows && !wallBetween(cell, n));
+    /* The corridor from where they are to the square under the finger, when that's a short hop
+       away: a finger moving quickly reports one point every so often, and the straight line
+       between two of them cuts corners and runs into walls. Following the corridor instead
+       keeps the trail under the finger without ever passing through a wall. */
+    const corridorTo = (from, to, limit = 8) => {
+      const came = new Map([[from, null]]);
+      let edge = [from];
+      for (let far = 0; far < limit && edge.length; far++) {
+        const next = [];
+        for (const cell of edge) for (const n of neighbours(cell)) {
+          if (came.has(n)) continue;
+          came.set(n, cell);
+          if (n === to) {
+            const way = [];
+            for (let c = to; c !== from; c = came.get(c)) way.unshift(c);
+            return way;
+          }
+          next.push(n);
+        }
+        edge = next;
+      }
+      return null;
+    };
+    const step = cell => {
       if (cell < 0 || done) return;
       if (!trail.length) {                          // they have to come in by the way in
         if (cell !== maze.path[0]) return;
@@ -114,27 +167,51 @@ const MazeView = {
       } else {
         const here = trail.at(-1);
         if (cell === here) return;
-        if (wallBetween(here, cell)) return;        // a wall is a wall
-        if (trail.length > 1 && cell === trail.at(-2)) trail.pop();   // back the way they came
-        else if (trail.includes(cell)) return;      // their own trail: nowhere new to go
+        const already = trail.indexOf(cell);
+        // Touching anywhere already walked rewinds to there: no shuffling back square by square.
+        if (already >= 0) trail.length = already + 1;
+        else if (wallBetween(here, cell)) return;   // a wall is a wall
         else trail.push(cell);
       }
       seen.add(trail.at(-1));
       // Out at the bottom: in a maze with one way through, that trail is the route.
       if (trail.length === maze.path.length && trail.at(-1) === maze.path.at(-1)) {
+        hold(false);
         if (navigator.vibrate) { try { navigator.vibrate([30, 50, 30]); } catch(e){} }
         onSolved([...trail]);
         return;
       }
       redraw();
     };
+    /* Where the finger is now. Next door, or anywhere already walked, is simply stepped to.
+       Somewhere further off is only followed while the finger is moving (`catchUp`), by walking
+       the corridor to it: a finger put down on a far square does nothing, so nobody can tap
+       their way through the maze. */
+    const reach = (cell, catchUp = false) => {
+      if (cell < 0 || done || !trail.length) return step(cell);
+      const here = trail.at(-1);
+      if (cell === here) return;
+      if (trail.includes(cell) || !wallBetween(here, cell)) return step(cell);
+      if (!catchUp) return;
+      for (const c of corridorTo(here, cell) ?? []) { step(c); if (done) return; }
+    };
     let tracing = false;
-    grid.addEventListener("pointerdown", e => { tracing = true; grid.setPointerCapture?.(e.pointerId); reach(cellUnder(e)); e.preventDefault(); });
-    grid.addEventListener("pointermove", e => { if (tracing) { reach(cellUnder(e)); e.preventDefault(); } });
-    for (const end of ["pointerup", "pointercancel", "pointerleave"]) grid.addEventListener(end, () => { tracing = false; });
+    const hold = on => {
+      tracing = on;
+      document.body.classList.toggle("mazetracing", on);   // nothing else on the page moves meanwhile
+    };
+    grid.addEventListener("pointerdown", e => {
+      hold(true);
+      grid.setPointerCapture?.(e.pointerId);
+      reach(cellUnder(e));
+      e.preventDefault();
+    });
+    grid.addEventListener("pointermove", e => { if (tracing) { reach(cellUnder(e), true); e.preventDefault(); } });
+    // Not pointerleave: with the pointer captured, sliding off the maze and back shouldn't let go.
+    for (const end of ["pointerup", "pointercancel"]) grid.addEventListener(end, () => hold(false));
 
     redraw();
-    return { grid, says, redraw };
+    return { grid, says, buttons, redraw };
   },
 };
 

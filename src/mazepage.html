@@ -12,6 +12,7 @@
   color-scheme:only light;
 }
 *{box-sizing:border-box}
+html,body{overscroll-behavior:none}
 body{margin:0;background:var(--linen);color:var(--ink);font-family:var(--serif);
   padding:calc(env(safe-area-inset-top) + 18px) 18px calc(env(safe-area-inset-bottom) + 24px)}
 main{max-width:560px;margin:0 auto}
@@ -25,6 +26,13 @@ p.note{font-size:14px;color:var(--slate);margin:0 0 16px}
 #mazeGrid #mazeLetters text{font-family:var(--serif);font-size:5px;fill:var(--slate)}
 #mazeGrid #mazeLetters text.route{fill:var(--ink);font-weight:700}
 #mazeGrid #mazeStart{fill:var(--brass)}
+#mazeGrid #mazeHead{fill:none;stroke:var(--brass);stroke-width:1.1}
+.mazebtns{display:flex;gap:10px;margin-top:10px}
+.mazebtns button{flex:1;min-height:44px;font-family:var(--serif);font-size:15px;
+  border:1px solid var(--slate);background:transparent;color:var(--ink)}
+.mazebtns button:disabled{opacity:.4}
+/* While a finger is walking the maze, the page itself doesn't move under it. */
+body.mazetracing{touch-action:none;overscroll-behavior:none}
 [hidden]{display:none!important}
 p.mazesays{font-size:14px;color:var(--slate);margin:10px 0 0}
 p.mazesays.done{font-size:17px;color:var(--ink);font-weight:600;border-left:3px solid var(--jade);
@@ -50,9 +58,9 @@ function show(){
   here.replaceChildren();
   const view = MazeView.draw(MAZE.maze, {
     sentence: MAZE.maze.sentence,
-    onSolved: () => { view.redraw(true); again.hidden = false; },
+    onSolved: () => { view.redraw(true); again.hidden = false; view.says.scrollIntoView({ block: "center" }); },
   });
-  here.append(view.grid, view.says);
+  here.append(view.grid, view.buttons, view.says);
 }
 again.onclick = show;
 show();

@@ -141,9 +141,12 @@ first.
   14 KB) you can send to someone to try: no locations, no clues, nothing of the game, and the
   answer is scrambled as in the game file. The same
   sentence always gives the same maze (nothing is random), and Try another steps to a different
-  one that is just as repeatable. Teams drag a finger from the marked square; each right square shows its letter, a
-  wrong one does nothing, and finishing writes the sentence out and opens Next. Try another
-  builds a different maze from the same sentence.
+  one that is just as repeatable. Teams drag a finger from the gold square through the corridors;
+  wrong turns are walkable and carry letters too, and only coming out at the bottom writes the
+  sentence out and opens Next. It is built for a thumb on a phone: the walk keeps up with a
+  fast finger, touching anywhere already walked rewinds to there, **Step back** and **Start
+  again** undo a wrong turn without retracing it, and the page can't scroll or refresh while a
+  finger is on the maze.
 - Documents (optional, per challenge): a handout teams read in the game, one picture per page
   (export each PDF page as a JPG and list the links in order). A button opens it over the
   challenge; page buttons, a Page N of M list, swipe and tap-to-zoom; Close returns to the
@@ -178,7 +181,7 @@ first.
   and both lists. Teams see two buttons, Clues and Suspects, and read one list at a time; neither is
   chosen until they tap one. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 203 unit tests and 136 browser tests, run by CI on every push.
+- 203 unit tests and 138 browser tests, run by CI on every push.
 
 **Live (17 September 2026)**
 - Real content is in: 9 locations, 60 challenges (49 with pictures on
