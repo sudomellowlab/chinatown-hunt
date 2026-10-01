@@ -819,6 +819,7 @@ function renderMazeEditor(){
   info.classList.toggle("bad", problems.length > 0);
   $("tfMazeAnother").hidden = !maze;
   $("tfMazeRemove").hidden = !maze;
+  $("tfMazeFile").hidden = !maze;
   drawMazePreview($("tfMazePrev"), maze);
 }
 function makeMaze(attempt = 0){
@@ -830,6 +831,22 @@ function makeMaze(attempt = 0){
 }
 /* The same sentence always makes the same maze, so Make the maze is repeatable; Try another
    asks for the next one along, and that one is repeatable too. */
+/* A single-maze file: the maze on its own, for someone else to try. No locations, no clues,
+   nothing of the game but this one puzzle, and its letters are sealed as the game's are. */
+const MAZE_PAGE = "__MAZE_PAGE__";
+const MAZE_PACK_SLOT = '"__MAZE_PACK__"';
+$("tfMazeFile").onclick = () => {
+  const maze = Play.mazeOf(editing?.task);
+  if (!maze) { alert("Make the maze first."); return; }
+  if (MAZE_PAGE.split(MAZE_PACK_SLOT).length !== 2) {
+    alert("Exporting a maze works in the built admin file (dist/chinatown-hunt-admin.html). Run node build.js.");
+    return;
+  }
+  const title = `${selectedLocation()?.name || GAME.title || "Maze"} — maze`;
+  const html = MAZE_PAGE.split(MAZE_PACK_SLOT).join(JSON.stringify(Pack.seal({ title, maze: cleanMaze(editing.task).maze })));
+  downloadFile(new File([html], "chinatown-maze.html", { type: "text/html" }));
+};
+
 $("tfMazeMake").onclick = () => makeMaze(0);
 $("tfMazeAnother").onclick = () => makeMaze((Play.mazeOf(editing?.task)?.attempt ?? 0) + 1);
 // Changing how hard it should be builds that maze straight away, if there is one to replace.

@@ -39,19 +39,28 @@ function page(admin, modules) {
 // Participant page: the game only, with its content left as a slot for a sealed pack.
 // The field tools (field.js) are not in it as code: Export puts them in "__FIELD_PACK__", encrypted with the
 // organiser's password, and unlock.js runs them once that password is typed.
-const template = page(false, [inline("engine.js"), inline("play.js"), inline("pack.js"), inline("vault.js"),
+const template = page(false, [inline("engine.js"), inline("play.js"), inline("pack.js"), inline("vault.js"), inline("mazeview.js"),
   'const GAME = Pack.open("__GAME_PACK__");', inline("app.js"), inline("unlock.js")]);
 // Each marker is distinctive enough not to catch innocent code (setPoi( not setPoi, which is in setPointerCapture).
 for (const admin of ['id="drawer"', 'id="devbtn"', "setPoi(", "Walk.record", "__PARTICIPANT_TEMPLATE__", "__FIELD_TOOLS__", "startPreview", "previewbar", "pvGo",
   "ftPanel", "Field tools", "Pretend to be", "ftRestart"])
   if (template.includes(admin)) throw new Error(`build: admin code leaked into the participant file (${admin})`);
 
+/* The single-maze page: one maze to try, nothing else. The admin file carries it the same way
+   it carries the participant page, and fills in the maze when the organiser exports one. */
+const mazePage = swap(src("mazepage.html"), "// __MODULES__",
+  [inline("pack.js"), inline("mazeview.js")].join("\n\n"), "modules slot in mazepage.html");
+// Markers of actual code, not prose: pack.js's own banner says "GAME PACK".
+for (const leak of ['id="drawer"', "Play.", "GAME.locations", "Maze.build", "navigator.geolocation"])
+  if (mazePage.includes(leak)) throw new Error(`build: the single-maze page carries more than it needs (${leak})`);
+
 // Admin page: everything, plus the participant page embedded so Export can produce it.
 const templateLiteral = JSON.stringify(template).replace(/</g, "\\u003c");
 const adminPage = page(true, [
-  inline("engine.js"), inline("play.js"), inline("session.js"), inline("poi.js"), inline("pack.js"), inline("vault.js"), inline("maze.js"), inline("game.js"), inline("app.js"),
-  swap(swap(inline("admin.js"), '"__PARTICIPANT_TEMPLATE__"', templateLiteral, "participant template slot in admin.js"),
+  inline("engine.js"), inline("play.js"), inline("session.js"), inline("poi.js"), inline("pack.js"), inline("vault.js"), inline("maze.js"), inline("mazeview.js"), inline("game.js"), inline("app.js"),
+  swap(swap(swap(inline("admin.js"), '"__PARTICIPANT_TEMPLATE__"', templateLiteral, "participant template slot in admin.js"),
     '"__FIELD_TOOLS__"', JSON.stringify(inline("field.js")).replace(/</g, "\\u003c"), "field tools slot in admin.js"),
+    '"__MAZE_PAGE__"', JSON.stringify(mazePage).replace(/</g, "\\u003c"), "single-maze page slot in admin.js"),
 ]);
 
 // A playable participant file with the default game, as a sanity check and for CI.

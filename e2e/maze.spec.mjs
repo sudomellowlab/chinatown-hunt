@@ -338,3 +338,60 @@ test("a maze saved before every square had a letter is mended, not thrown away",
     await expect(phone.locator("#mazeLetters text")).toHaveCount(4);
   });
 });
+
+test("a maze can be exported on its own, for someone else to try", async ({ app, page, browser }) => {
+  await app.open();
+  await app.openTools();
+  await page.locator("#capTarget").selectOption(THK.id);
+  await page.locator("#taskList li").first().locator(".tedit").click();
+  await expect(page.locator("#tfMazeFile")).toBeHidden();              // nothing to export yet
+  await page.locator("#tfMazeSentence").fill(SENTENCE);
+  await page.locator("#tfMazeMake").click();
+  await expect(page.locator("#tfMazeFile")).toBeVisible();
+
+  // A maze can be sent out before the challenge is even saved.
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.locator("#tfMazeFile").click()]);
+  expect(dl.suggestedFilename()).toBe("chinatown-maze.html");
+  const html = readFileSync(await dl.path(), "utf8");
+
+  await page.locator("#tfSave").click();
+  await expect(page.locator("#taskForm")).toBeHidden();
+  const maze = await page.evaluate(id => {
+    const draft = JSON.parse(localStorage.getItem("chinatown-hunt-m1:draft"));
+    return draft.game.locations.find(l => l.id === id).tasks[0].maze;
+  }, THK.id);
+
+  // The file is the maze and nothing else: no game, no locations, no clues, and the answer is sealed.
+  for (const secret of [SENTENCE, LETTERS, maze.grid]) expect(html).not.toContain(secret);
+  for (const rest of ["Thian Hock Keng", "clueList", "chinatown-hunt:", "navigator.geolocation", "leaflet"])
+    expect(html, rest).not.toContain(rest);
+  expect(html.length).toBeLessThan(60_000);
+
+  // Someone opens it on a phone and plays it, with no trace of the hunt around it.
+  const phone = await browser.newContext({ ...devices["Pixel 7"] });
+  try {
+    const guest = await phone.newPage();
+    await guest.route("https://maze.test/**", r => r.fulfill({ contentType: "text/html; charset=utf-8", body: html }));
+    await guest.goto("https://maze.test/maze.html");
+    await expect(guest.locator("h1")).toHaveText(`${THK.name} — maze`);
+    await expect(guest.locator("#mazeGrid")).toBeVisible();
+    await expect(guest.locator("#mazeSays")).toHaveText("Start at the gold square and find your way out at the bottom.");
+    await expect(guest.locator("#again")).toBeHidden();
+
+    // Walking a wrong turn shows letters but marks nothing; the way out finishes it.
+    await trace(guest, maze, maze.path.slice(0, 4));
+    await expect(guest.locator("#mazeLetters text")).toHaveCount(4);
+    await expect(guest.locator("#mazeLetters text.route")).toHaveCount(0);
+    await trace(guest, maze, maze.path);
+    await expect(guest.locator("#mazeSays")).toHaveText(SENTENCE);
+    await expect(guest.locator("#mazeLetters text.route")).toHaveCount(maze.path.length);
+
+    // And they can have another go.
+    await expect(guest.locator("#again")).toBeVisible();
+    await guest.locator("#again").click();
+    await expect(guest.locator("#mazeSays")).toHaveText("Start at the gold square and find your way out at the bottom.");
+    await expect(guest.locator("#mazeLetters text")).toHaveCount(0);
+  } finally {
+    await phone.close();
+  }
+});

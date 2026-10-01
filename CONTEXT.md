@@ -137,7 +137,9 @@ first.
   side by side. Every square carries a letter — the sentence along the route,
   decoys everywhere else — so teams have to read the walls rather than watch for letters; the
   route only lights up once they come out at the bottom. Up to about 80 letters, which is what
-  fits a phone. The same
+  fits a phone. **Export just this maze…** saves the maze on its own as a small HTML file (about
+  14 KB) you can send to someone to try: no locations, no clues, nothing of the game, and the
+  answer is scrambled as in the game file. The same
   sentence always gives the same maze (nothing is random), and Try another steps to a different
   one that is just as repeatable. Teams drag a finger from the marked square; each right square shows its letter, a
   wrong one does nothing, and finishing writes the sentence out and opens Next. Try another
@@ -176,7 +178,7 @@ first.
   and both lists. Teams see two buttons, Clues and Suspects, and read one list at a time; neither is
   chosen until they tap one. At that point no new location can open (a team mid-location finishes it
   first), then one screen shows all clues and suspects. No accusation on this site.
-- 203 unit tests and 135 browser tests, run by CI on every push.
+- 203 unit tests and 136 browser tests, run by CI on every push.
 
 **Live (17 September 2026)**
 - Real content is in: 9 locations, 60 challenges (49 with pictures on

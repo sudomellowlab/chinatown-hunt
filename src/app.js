@@ -1,6 +1,7 @@
 import { Engine } from "./engine.js";
 import { Play } from "./play.js";
 import { Vault } from "./vault.js";
+import { MazeView } from "./mazeview.js";
 import { GAME } from "./game.js";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -551,124 +552,22 @@ function taskPicture(task){
    The maze itself is built in the admin file (maze.js) and carried with
    the challenge; the game only draws it.
    ════════════════════════════════════════════════════════════════════ */
-const SVG = "http://www.w3.org/2000/svg";
-const svg = (tag, props = {}) => {
-  const el = document.createElementNS(SVG, tag);
-  for (const [k, v] of Object.entries(props)) el.setAttribute(k, v);
-  return el;
-};
-const WALL = { N: 1, E: 2, S: 4, W: 8 };
-
 function mazeBlock(task){
   const maze = Play.mazeOf(task);
   if (!maze) return { solved: true, node: null };
   const done = Play.isSolved(state.progress, task);
-  const size = 10, pad = 0.6;                       // drawn in grid units; the SVG scales to the screen
-  const box = svg("svg", { id:"mazeGrid", viewBox:`${-pad} ${-pad} ${maze.cols * size + pad * 2} ${maze.rows * size + pad * 2}`,
-    role:"img", "aria-label":"Maze: trace the route with your finger" });
-  const at = cell => ({ col: cell % maze.cols, row: Math.floor(cell / maze.cols) });
-
-  /* Where the team has walked: `trail` is the way back from the entrance (retreating out of a
-     dead end rubs it out behind them), and `seen` is every square they've set foot on, whose
-     letter stays on show. A finished maze shows the route. */
-  let trailCells = done ? [...maze.path] : [];
-  const seen = new Set(trailCells);
-  const trail = svg("g", { id:"mazeTrail" });
-  const letters = svg("g", { id:"mazeLetters" });
-  box.append(trail, letters);
-
-  // Walls.
-  const lines = svg("g", { class:"mazewalls" });
-  for (let cell = 0; cell < maze.cols * maze.rows; cell++) {
-    const { col, row } = at(cell), x = col * size, y = row * size, w = maze.walls[cell] ?? 0;
-    const edge = (x1, y1, x2, y2) => lines.append(svg("line", { x1, y1, x2, y2 }));
-    if (w & WALL.N) edge(x, y, x + size, y);
-    if (w & WALL.W) edge(x, y, x, y + size);
-    if (row === maze.rows - 1 && (w & WALL.S)) edge(x, y + size, x + size, y + size);
-    if (col === maze.cols - 1 && (w & WALL.E)) edge(x + size, y, x + size, y + size);
-  }
-  box.append(lines);
-  // Where to start, marked, so nobody hunts for the way in. Kept as a reference, not looked up:
-  // the maze isn't on the page yet while it's being built.
-  const first = at(maze.path[0]);
-  const startMark = svg("circle", { id:"mazeStart", cx:first.col * size + size / 2, cy:first.row * size + size / 2, r:size * 0.3 });
-  box.append(startMark);
-
-  const told = h("p", { id:"mazeSays", class:"mazesays", role:"status" });
-  const onRoute = new Set(maze.path);
-  function draw(){
-    const finished = Play.isSolved(state.progress, task);
-    // The way back from the entrance, and the route itself once they're out.
-    trail.replaceChildren(...(finished ? maze.path : trailCells).map(cell => {
-      const { col, row } = at(cell);
-      return svg("rect", { class: finished ? "route" : "", x:col * size + 0.8, y:row * size + 0.8,
-        width:size - 1.6, height:size - 1.6, rx:1.2 });
-    }));
-    /* Every square they've set foot on keeps its letter — the wrong ones carry letters too.
-       Once they're out, the route is drawn last and in order, so it reads as the sentence. */
-    const show = finished ? [...[...seen].filter(c => !onRoute.has(c)), ...maze.path] : [...seen];
-    letters.replaceChildren(...show.map(cell => {
-      const { col, row } = at(cell);
-      const t = svg("text", { class: finished && onRoute.has(cell) ? "route" : "",
-        x:col * size + size / 2, y:row * size + size / 2, "text-anchor":"middle", "dominant-baseline":"central" });
-      t.textContent = maze.grid?.[cell] ?? "";
-      return t;
-    }));
-    startMark.toggleAttribute("hidden", seen.size > 0);
-    told.textContent = finished ? (Play.mazeSentence(task) || maze.letters)
-      : seen.size ? "Keep going. The way out is at the bottom."
-      : "Start at the gold square and find your way out at the bottom.";
-    told.classList.toggle("done", finished);
-  }
-
-  /* Dragging: the finger walks the maze. Any square it can reach from where it is — next door,
-     with no wall between — is walked into, right way or wrong; dragging back the way it came
-     retreats. Only coming out at the bottom finishes it, and that can only be done by the one
-     route through, so the letters give nothing away until then. */
-  const cellUnder = e => {
-    const r = box.getBoundingClientRect();
-    if (!r.width || !r.height) return -1;
-    const col = Math.floor(((e.clientX - r.left) / r.width) * maze.cols);
-    const row = Math.floor(((e.clientY - r.top) / r.height) * maze.rows);
-    return col >= 0 && col < maze.cols && row >= 0 && row < maze.rows ? row * maze.cols + col : -1;
-  };
-  const wallBetween = (from, to) => {
-    const d = to - from, cols = maze.cols;
-    const bit = d === -cols ? WALL.N : d === cols ? WALL.S
-      : d === 1 && to % cols !== 0 ? WALL.E : d === -1 && from % cols !== 0 ? WALL.W : 0;
-    return !bit || (maze.walls[from] & bit);
-  };
-  const reach = cell => {
-    if (cell < 0 || Play.isSolved(state.progress, task)) return;
-    if (!trailCells.length) {                      // they have to come in by the way in
-      if (cell !== maze.path[0]) return;
-      trailCells.push(cell);
-    } else {
-      const here = trailCells.at(-1);
-      if (cell === here) return;
-      if (wallBetween(here, cell)) return;         // a wall is a wall
-      if (trailCells.length > 1 && cell === trailCells.at(-2)) trailCells.pop();   // back the way they came
-      else if (trailCells.includes(cell)) return;  // their own trail: nowhere new to go
-      else trailCells.push(cell);
-    }
-    seen.add(trailCells.at(-1));
-    // Out at the bottom: in a maze with one way through, that trail is the route.
-    const nextProgress = Play.solveMaze(state.progress, task, trailCells);
-    if (nextProgress !== state.progress) {
-      state.progress = nextProgress;
+  // The drawing and the walking are MazeView's (shared with the single-maze file the admin exports).
+  const view = MazeView.draw(maze, {
+    solved: done,
+    sentence: Play.mazeSentence(task),
+    onSolved: trail => {
+      const next = Play.solveMaze(state.progress, task, trail);
+      if (next === state.progress) return;
+      state.progress = next;
       save(); renderSheet();
-      if (navigator.vibrate) { try { navigator.vibrate([30, 50, 30]); } catch(e){} }
-      return;
-    }
-    draw();
-  };
-  let tracing = false;
-  box.addEventListener("pointerdown", e => { tracing = true; box.setPointerCapture?.(e.pointerId); reach(cellUnder(e)); e.preventDefault(); });
-  box.addEventListener("pointermove", e => { if (tracing) { reach(cellUnder(e)); e.preventDefault(); } });
-  for (const end of ["pointerup", "pointercancel", "pointerleave"]) box.addEventListener(end, () => { tracing = false; });
-
-  draw();
-  return { solved: done, node: h("div", { id:"mazeBox", class:`maze${done ? " solved" : ""}` }, box, told) };
+    },
+  });
+  return { solved: done, node: h("div", { id:"mazeBox", class:`maze${done ? " solved" : ""}` }, view.grid, view.says) };
 }
 
 /* A challenge's answer, when it has one: a box to type in, or the options to tap.
