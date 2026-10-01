@@ -132,6 +132,21 @@ test("the maze is drawn with walls, and the route is the only way through", asyn
     }
     await expect(phone.locator("#mazeGrid .mazewalls line")).toHaveCount(expected);
     expect(expected).toBeGreaterThan(maze.cols * maze.rows);
+
+    /* A way in at the top and a way out at the bottom: the route runs between them, and those
+       are the only two gaps in the outer wall. */
+    const start = maze.path[0], end = maze.path.at(-1);
+    expect(start, "the route starts on the top row").toBeLessThan(maze.cols);
+    expect(end, "and ends on the bottom row").toBeGreaterThanOrEqual(maze.cols * (maze.rows - 1));
+    expect(maze.walls[start] & N, "the way in is open").toBe(0);
+    expect(maze.walls[end] & S, "the way out is open").toBe(0);
+    const topGaps = [...Array(maze.cols).keys()].filter(c => !(maze.walls[c] & N));
+    const bottomGaps = [...Array(maze.cols).keys()].map(c => c + maze.cols * (maze.rows - 1)).filter(c => !(maze.walls[c] & S));
+    expect(topGaps).toEqual([start]);
+    expect(bottomGaps).toEqual([end]);
+    // The gold marker sits on the way in.
+    const marker = await phone.locator("#mazeStart").evaluate(el => ({ cx: +el.getAttribute("cx"), cy: +el.getAttribute("cy") }));
+    expect(marker).toEqual({ cx: (start % maze.cols) * 10 + 5, cy: 5 });
     const viewBox = await phone.locator("#mazeGrid").getAttribute("viewBox");
     expect(viewBox).toBe(`-0.6 -0.6 ${maze.cols * 10 + 1.2} ${maze.rows * 10 + 1.2}`);
 

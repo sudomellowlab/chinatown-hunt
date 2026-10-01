@@ -59,14 +59,25 @@ describe("building a maze from a sentence", () => {
       }
   });
 
-  test("the edge of the grid is walled all the way round", () => {
+  test("in at the top, out at the bottom: a way through, not a way in", () => {
+    const start = maze.path[0], end = maze.path.at(-1);
+    assert.ok(start < maze.cols, "the route starts on the top row");
+    assert.ok(end >= maze.cols * (maze.rows - 1), "and ends on the bottom row");
+    assert.ok(!(maze.walls[start] & Maze.N), "the way in is open");
+    assert.ok(!(maze.walls[end] & Maze.S), "and so is the way out");
+  });
+
+  test("the edge of the grid is walled all the way round, bar those two openings", () => {
+    const start = maze.path[0], end = maze.path.at(-1);
+    let gaps = 0;
     for (let cell = 0; cell < maze.cols * maze.rows; cell++) {
       const col = cell % maze.cols, row = Math.floor(cell / maze.cols);
-      if (row === 0) assert.ok(maze.walls[cell] & Maze.N, `${cell} is open at the top`);
-      if (row === maze.rows - 1) assert.ok(maze.walls[cell] & Maze.S, `${cell} is open at the bottom`);
+      if (row === 0 && !(maze.walls[cell] & Maze.N)) { gaps++; assert.equal(cell, start, `${cell} is open at the top`); }
+      if (row === maze.rows - 1 && !(maze.walls[cell] & Maze.S)) { gaps++; assert.equal(cell, end, `${cell} is open at the bottom`); }
       if (col === 0) assert.ok(maze.walls[cell] & Maze.W, `${cell} is open on the left`);
       if (col === maze.cols - 1) assert.ok(maze.walls[cell] & Maze.E, `${cell} is open on the right`);
     }
+    assert.equal(gaps, 2, "exactly two openings");
   });
 
   test("dead ends: there are squares the route never visits", () => {
@@ -91,6 +102,8 @@ describe("building a maze from a sentence", () => {
       assert.equal(m.letters.length, Maze.letters(sentence).length, sentence);
       assert.equal(reachable(m).size, m.cols * m.rows, sentence);
       assert.equal(passages(m), m.cols * m.rows - 1, sentence);
+      assert.ok(m.path[0] < m.cols, `${sentence}: starts on the top row`);
+      assert.ok(m.path.at(-1) >= m.cols * (m.rows - 1), `${sentence}: ends on the bottom row`);
     }
   });
 
@@ -120,7 +133,9 @@ describe("checking a maze the game is given", () => {
     assert.equal(Maze.problem(outside), "square 2 of the route is outside the maze");
 
     const jumps = copy();
-    jumps.path[3] = 0;                                  // nowhere near square 3
+    const after = jumps.path[2];                        // a square that is nowhere near square 3
+    jumps.path[3] = [...Array(jumps.cols * jumps.rows).keys()].find(c =>
+      c !== after && !Maze.neighbours(after, jumps.cols, jumps.rows).includes(c));
     assert.equal(Maze.problem(jumps), "the route jumps between squares 3 and 4");
 
     const walled = copy();

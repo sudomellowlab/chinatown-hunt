@@ -57,24 +57,29 @@ const Maze = {
     return out;
   },
 
-  // A grid that fits the route with room to spare for dead ends.
+  /* A grid that fits the route with room to spare for dead ends. Never more rows than there
+     are letters: the route has to reach from the top row to the bottom one. */
   shape(count){
-    const cols = Math.max(5, Math.min(Maze.MAX_COLS, Math.ceil(Math.sqrt(count / Maze.FILL))));
-    const rows = Math.max(5, Math.ceil(count / (cols * Maze.FILL)));
+    const cols = Math.max(3, Math.min(Maze.MAX_COLS, Math.ceil(Math.sqrt(count / Maze.FILL))));
+    const rows = Math.max(3, Math.min(count, Math.ceil(count / (cols * Maze.FILL))));
     return { cols, rows };
   },
 
-  /* The route: a walk of exactly `count` squares that never crosses itself, found by trying
-     ways on and stepping back when stuck. Returns null if this grid can't hold one. */
-  route(cols, rows, count, random, budget = 200000){
-    const start = 0;
+  /* The route: a walk of exactly `count` squares, in at the top and out at the bottom, that
+     never crosses itself. Found by trying ways on and stepping back when stuck, so the walk
+     ends where it has to rather than wherever it happens to run out.
+     Returns null if this grid can't hold one within the budget. */
+  route(cols, rows, count, random, start = 0, budget = 400000){
+    const out = cell => cell >= cols * (rows - 1);         // the bottom row is the way out
     const path = [start], taken = new Set([start]), tried = [new Set()];
     let steps = 0;
-    while (path.length < count) {
+    while (path.length < count || !out(path.at(-1))) {
       if (++steps > budget) return null;
       const cell = path.at(-1);
-      const open = Maze.neighbours(cell, cols, rows).filter(n => !taken.has(n) && !tried.at(-1).has(n));
-      if (!open.length) {                                  // stuck: step back and try another way
+      const open = path.length < count
+        ? Maze.neighbours(cell, cols, rows).filter(n => !taken.has(n) && !tried.at(-1).has(n))
+        : [];                                              // long enough but not out yet: step back
+      if (!open.length) {
         if (path.length === 1) return null;
         taken.delete(path.pop());
         tried.pop();
@@ -124,10 +129,20 @@ const Maze = {
     const random = Maze.numbers(sentence, attempt);
     let { cols, rows } = Maze.shape(letters.length);
     for (let roomier = 0; roomier < 24; roomier++) {
-      const path = Maze.route(cols, rows, letters.length, random);
-      if (path) return { cols, rows, walls: Maze.carve(cols, rows, path, random), path,
-        letters: letters.join(""), sentence: String(sentence).trim(), attempt };
-      rows += 1;                                           // give it another row and try again
+      // In from somewhere along the top; a few different ways in are tried before the grid grows.
+      for (let go = 0; go < 4; go++) {
+        const start = Math.floor(random() * cols);
+        const path = Maze.route(cols, rows, letters.length, random, start);
+        if (!path) continue;
+        const walls = Maze.carve(cols, rows, path, random);
+        walls[path[0]] &= ~Maze.N;                         // the way in
+        walls[path.at(-1)] &= ~Maze.S;                     // and the way out
+        return { cols, rows, walls, path, letters: letters.join(""), sentence: String(sentence).trim(), attempt };
+      }
+      // No way through this grid: make it roomier, taller while the letters can still reach.
+      if (rows + 1 <= letters.length) rows += 1;
+      else if (cols < Maze.MAX_COLS) cols += 1;
+      else break;
     }
     throw new Error("couldn't lay a route for that sentence; try a shorter one");
   },
