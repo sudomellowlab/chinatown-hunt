@@ -16,7 +16,16 @@ const Maze = {
   N: 1, E: 2, S: 4, W: 8,
   MIN_LETTERS: 4,
   MAX_COLS: 9,           // on a phone, more columns than this makes the squares too small to hit
-  FILL: 0.6,             // how much of the grid the route takes up; the rest becomes dead ends
+  MAX_ROWS: 15,          // and more rows than this makes the maze taller than a phone screen
+  /* How much of the grid the route takes up. The rest becomes false corridors, so the less the
+     route fills, the more there is to go wrong: that is what makes a maze hard. */
+  LEVELS: { easy: 0.68, fair: 0.55, hard: 0.44 },
+  DEFAULT_LEVEL: "hard",
+  fill(level){ return Maze.LEVELS[level] ?? Maze.LEVELS[Maze.DEFAULT_LEVEL]; },
+  /* The most letters a maze can hold: the biggest grid that fits a phone, with room left for
+     the route to wind rather than fill nearly every square (past about this many, a route
+     can't reliably be laid at all, and the squares would be too small to trace anyway). */
+  MAX_LETTERS: 80,
 
   /* The same sentence always gives the same maze: the numbers come from the sentence itself,
      not from chance, so a maze never changes under anyone. `attempt` is how "Try another" asks
@@ -57,11 +66,13 @@ const Maze = {
     return out;
   },
 
-  /* A grid that fits the route with room to spare for dead ends. Never more rows than there
-     are letters: the route has to reach from the top row to the bottom one. */
-  shape(count){
-    const cols = Math.max(3, Math.min(Maze.MAX_COLS, Math.ceil(Math.sqrt(count / Maze.FILL))));
-    const rows = Math.max(3, Math.min(count, Math.ceil(count / (cols * Maze.FILL))));
+  /* A grid that fits the route with room to spare for false corridors. Never more rows than
+     there are letters (the route has to reach from the top row to the bottom one), and never
+     more than will fit on a phone. */
+  shape(count, level){
+    const fill = Maze.fill(level);
+    const cols = Math.max(3, Math.min(Maze.MAX_COLS, Math.ceil(Math.sqrt(count / fill))));
+    const rows = Math.max(3, Math.min(count, Maze.MAX_ROWS, Math.ceil(count / (cols * fill))));
     return { cols, rows };
   },
 
@@ -104,43 +115,55 @@ const Maze = {
     };
     const inTree = new Set(path);
     for (let i = 1; i < path.length; i++) open(path[i - 1], path[i]);
-    // Everything not on the route hangs off it as dead ends (randomised Prim's).
-    const frontier = [];
-    const offer = cell => {
-      for (const n of Maze.neighbours(cell, cols, rows)) if (!inTree.has(n)) frontier.push([cell, n]);
-    };
-    for (const cell of path) offer(cell);
-    while (frontier.length) {
-      const pick = Math.floor(random() * frontier.length);
-      const [from, to] = frontier.splice(pick, 1)[0];
-      if (inTree.has(to)) continue;
-      open(from, to);
-      inTree.add(to);
-      offer(to);
+    /* Everything not on the route becomes false corridors hanging off it. They are carved
+       depth-first, so each one wanders a long way before dying: a wrong turn looks as
+       promising as the right one for quite a while. (Taking the nearest square instead, as
+       Prim's does, leaves short stubs that give the game away at a glance.) */
+    const starts = [...path].reverse();                    // from the far end first, so corridors reach back
+    for (const from of starts) {
+      for (const first of Maze.neighbours(from, cols, rows)) {
+        if (inTree.has(first)) continue;
+        open(from, first);
+        inTree.add(first);
+        const stack = [first];
+        while (stack.length) {
+          const cell = stack.at(-1);
+          const open_ = Maze.neighbours(cell, cols, rows).filter(n => !inTree.has(n));
+          if (!open_.length) { stack.pop(); continue; }
+          const next = open_[Math.floor(random() * open_.length)];
+          open(cell, next);
+          inTree.add(next);
+          stack.push(next);
+        }
+      }
     }
     return walls;
   },
 
   /* Build a maze for a sentence. The same sentence and attempt always give the same maze.
      Throws, in plain words, when the sentence won't do. */
-  build(sentence, attempt = 0){
+  build(sentence, attempt = 0, level = Maze.DEFAULT_LEVEL){
     const letters = Maze.letters(sentence);
     if (letters.length < Maze.MIN_LETTERS) throw new Error(`write a sentence with at least ${Maze.MIN_LETTERS} letters`);
-    const random = Maze.numbers(sentence, attempt);
-    let { cols, rows } = Maze.shape(letters.length);
+    if (letters.length > Maze.MAX_LETTERS)
+      throw new Error(`that sentence has ${letters.length} letters: a maze that fits a phone holds about ${Maze.MAX_LETTERS}`);
+    const random = Maze.numbers(`${level}|${sentence}`, attempt);
+    let { cols, rows } = Maze.shape(letters.length, level);
     for (let roomier = 0; roomier < 24; roomier++) {
-      // In from somewhere along the top; a few different ways in are tried before the grid grows.
-      for (let go = 0; go < 4; go++) {
+      /* In from somewhere along the top. A walk that fills this much of the grid can paint
+         itself into a corner, so several ways in are tried before the grid is made roomier. */
+      for (let go = 0; go < 12; go++) {
         const start = Math.floor(random() * cols);
         const path = Maze.route(cols, rows, letters.length, random, start);
         if (!path) continue;
         const walls = Maze.carve(cols, rows, path, random);
         walls[path[0]] &= ~Maze.N;                         // the way in
         walls[path.at(-1)] &= ~Maze.S;                     // and the way out
-        return { cols, rows, walls, path, letters: letters.join(""), sentence: String(sentence).trim(), attempt };
+        return { cols, rows, walls, path, letters: letters.join(""), sentence: String(sentence).trim(), attempt,
+          level: level in Maze.LEVELS ? level : Maze.DEFAULT_LEVEL };
       }
-      // No way through this grid: make it roomier, taller while the letters can still reach.
-      if (rows + 1 <= letters.length) rows += 1;
+      // No way through this grid: make it roomier, but never taller than a phone will show.
+      if (rows + 1 <= Math.min(letters.length, Maze.MAX_ROWS)) rows += 1;
       else if (cols < Maze.MAX_COLS) cols += 1;
       else break;
     }

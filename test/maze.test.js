@@ -111,6 +111,22 @@ describe("building a maze from a sentence", () => {
     for (const bad of ["", "   ", "Hi!", "...", null])
       assert.throws(() => Maze.build(bad), /at least 4 letters/);
   });
+
+  test("and so is one too long to fit a phone, whatever the level", () => {
+    const tooLong = "a".repeat(Maze.MAX_LETTERS + 1);
+    for (const level of ["easy", "fair", "hard"])
+      assert.throws(() => Maze.build(tooLong, 0, level), /a maze that fits a phone holds about/, level);
+    assert.equal(Maze.problem(Maze.build("a".repeat(Maze.MAX_LETTERS))), null, "the longest that does fit still works");
+  });
+
+  test("no maze is taller than a phone will show, however long the sentence", () => {
+    for (const n of [20, 50, 80, Maze.MAX_LETTERS])
+      for (const level of ["easy", "fair", "hard"]) {
+        const m = Maze.build("a".repeat(n), 0, level);
+        assert.ok(m.rows <= Maze.MAX_ROWS, `${n} letters, ${level}: ${m.rows} rows`);
+        assert.ok(m.cols <= Maze.MAX_COLS, `${n} letters, ${level}: ${m.cols} columns`);
+      }
+  });
 });
 
 describe("checking a maze the game is given", () => {
@@ -148,5 +164,61 @@ describe("checking a maze the game is given", () => {
     const crosses = copy();
     crosses.path[crosses.path.length - 1] = crosses.path.at(-3);
     assert.equal(Maze.problem(crosses), "the route crosses itself");
+  });
+});
+
+describe("how hard the maze is", () => {
+  const S = "Sang Nila Utama reigned over it and was given the name of Seri Teri Buana.";
+  const built = level => Maze.build(S, 0, level);
+  const offRoute = m => m.cols * m.rows - m.path.length;
+  // A dead end is a square with only one way out: the more of them, the more wrong turns.
+  const deadEnds = m => {
+    let n = 0;
+    for (let cell = 0; cell < m.cols * m.rows; cell++)
+      if (Maze.neighbours(cell, m.cols, m.rows).filter(x => !(m.walls[cell] & Maze.step(cell, x, m.cols))).length === 1) n++;
+    return n;
+  };
+
+  test("harder means more of the grid is false corridors", () => {
+    const easy = built("easy"), fair = built("fair"), hard = built("hard");
+    assert.ok(offRoute(hard) > offRoute(fair), `hard ${offRoute(hard)} vs fair ${offRoute(fair)}`);
+    assert.ok(offRoute(fair) > offRoute(easy), `fair ${offRoute(fair)} vs easy ${offRoute(easy)}`);
+    assert.ok(offRoute(hard) > hard.path.length, "on hard, most of the maze is wrong turns");
+    assert.ok(deadEnds(hard) > deadEnds(easy), `dead ends: hard ${deadEnds(hard)} vs easy ${deadEnds(easy)}`);
+  });
+
+  test("the false corridors wander instead of stopping at once", () => {
+    const hard = built("hard");
+    // Walking off the route, you should be able to get several squares from it before it dies.
+    const onRoute = new Set(hard.path);
+    let deepest = 0;
+    for (const start of hard.path) {
+      for (const first of Maze.neighbours(start, hard.cols, hard.rows)) {
+        if (onRoute.has(first) || (hard.walls[start] & Maze.step(start, first, hard.cols))) continue;
+        const seen = new Set([start, first]), queue = [[first, 1]];
+        while (queue.length) {
+          const [cell, far] = queue.shift();
+          deepest = Math.max(deepest, far);
+          for (const n of Maze.neighbours(cell, hard.cols, hard.rows)) {
+            if (seen.has(n) || onRoute.has(n) || (hard.walls[cell] & Maze.step(cell, n, hard.cols))) continue;
+            seen.add(n); queue.push([n, far + 1]);
+          }
+        }
+      }
+    }
+    assert.ok(deepest >= 6, `the longest wrong turn runs ${deepest} squares`);
+  });
+
+  test("every level still makes a sound maze, and says which it was", () => {
+    for (const level of ["easy", "fair", "hard"]) {
+      const m = built(level);
+      assert.equal(Maze.problem(m), null, level);
+      assert.equal(m.level, level);
+      assert.ok(m.rows <= Maze.MAX_ROWS, `${level}: ${m.rows} rows fit a phone`);
+      assert.deepEqual(Maze.build(S, 0, level), m, `${level} is repeatable`);
+    }
+    assert.equal(Maze.build(S, 0, "nonsense").level, Maze.DEFAULT_LEVEL, "an unknown level falls back");
+    assert.equal(Maze.build(S).level, "hard", "and hard is what you get by default");
+    assert.notDeepEqual(Maze.build(S, 0, "easy").path, Maze.build(S, 0, "hard").path);
   });
 });

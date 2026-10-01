@@ -766,7 +766,7 @@ function cleanMaze(task){
   const maze = Play.mazeOf(task);
   return maze ? { maze: { cols: maze.cols, rows: maze.rows, walls: [...maze.walls], path: [...maze.path],
     letters: maze.letters, sentence: String(maze.sentence ?? "").trim(),
-    ...(maze.attempt ? { attempt: maze.attempt } : {}) } } : {};
+    ...(maze.attempt ? { attempt: maze.attempt } : {}), ...(maze.level ? { level: maze.level } : {}) } } : {};
 }
 function drawMazePreview(box, maze){
   box.replaceChildren();
@@ -800,11 +800,13 @@ function renderMazeEditor(){
   const typed = $("tfMazeSentence").value.trim();
   const info = $("tfMazeInfo");
   const problems = task ? Play.mazeProblems(task) : [];
+  const offRoute = maze ? maze.cols * maze.rows - maze.path.length : 0;
   info.textContent = problems.length ? problems.map(p => "• " + p).join("\n")
     : !maze ? (typed ? `Make the maze to use this sentence.`
         : "No maze. Type the sentence the route should spell, then Make the maze.")
     : maze.sentence !== typed ? "The sentence has changed: Make the maze again to use it."
-    : `${maze.cols} × ${maze.rows} squares, ${maze.path.length} letters. Teams start on the gold square and trace the route; the letters appear as they go.`;
+    : `${maze.cols} × ${maze.rows} squares, ${maze.path.length} on the route and ${offRoute} of false corridors. ` +
+      `Teams come in at the gold square, trace the route and leave at the bottom; the letters appear as they go.`;
   info.classList.toggle("bad", problems.length > 0);
   $("tfMazeAnother").hidden = !maze;
   $("tfMazeRemove").hidden = !maze;
@@ -812,7 +814,7 @@ function renderMazeEditor(){
 }
 function makeMaze(attempt = 0){
   const task = editing?.task; if (!task) return;
-  try { task.maze = Maze.build($("tfMazeSentence").value, attempt); }
+  try { task.maze = Maze.build($("tfMazeSentence").value, attempt, $("tfMazeLevel").value); }
   catch(e){ delete task.maze; $("tfMazeInfo").textContent = `Can't make a maze: ${e.message}.`; $("tfMazeInfo").classList.add("bad"); drawMazePreview($("tfMazePrev"), null); return; }
   $("tfErrors").textContent = "";
   renderMazeEditor();
@@ -821,6 +823,8 @@ function makeMaze(attempt = 0){
    asks for the next one along, and that one is repeatable too. */
 $("tfMazeMake").onclick = () => makeMaze(0);
 $("tfMazeAnother").onclick = () => makeMaze((Play.mazeOf(editing?.task)?.attempt ?? 0) + 1);
+// Changing how hard it should be builds that maze straight away, if there is one to replace.
+$("tfMazeLevel").onchange = () => { if (Play.mazeOf(editing?.task)) makeMaze(Play.mazeOf(editing.task).attempt ?? 0); };
 $("tfMazeRemove").onclick = () => { if (editing?.task) delete editing.task.maze; renderMazeEditor(); };
 $("tfMazeSentence").addEventListener("input", renderMazeEditor);
 
@@ -920,6 +924,7 @@ function openTaskForm(l, index){
   $("tfDocPages").value = Play.docPages(t).join("\n");
   renderDocInfo();
   $("tfMazeSentence").value = Play.mazeSentence(t);
+  $("tfMazeLevel").value = Play.mazeOf(t)?.level ?? Maze.DEFAULT_LEVEL;
   renderMazeEditor();
   // The answer is edited on the copy; Save puts it into the game with the rest.
   $("tfAnswer").replaceChildren(answerEditor(t, () => { $("tfErrors").textContent = ""; }));

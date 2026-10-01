@@ -242,3 +242,38 @@ test("Try another keeps moving on, even after saving and reopening the challenge
   expect(third).not.toBe(second);
   expect(third).not.toBe(first);
 });
+
+test("the maze can be made harder or easier, and the choice sticks", async ({ app, page }) => {
+  await app.open();
+  await app.openTools();
+  await page.locator("#capTarget").selectOption(THK.id);
+  const openChallenge = () => page.locator("#taskList li").first().locator(".tedit").click();
+  const squares = async () => {
+    const text = await page.locator("#tfMazeInfo").textContent();
+    const [, cols, rows] = text.match(/(\d+) × (\d+) squares/);
+    return Number(cols) * Number(rows);
+  };
+
+  await openChallenge();
+  await expect(page.locator("#tfMazeLevel")).toHaveValue("hard");       // hard unless told otherwise
+  await page.locator("#tfMazeSentence").fill(SENTENCE);
+  await page.locator("#tfMazeMake").click();
+  const hard = await squares();
+  await expect(page.locator("#tfMazeInfo")).toContainText("false corridors");
+
+  // Easier means a smaller grid: less of it is wrong turns.
+  await page.locator("#tfMazeLevel").selectOption("easy");
+  const easy = await squares();
+  expect(easy).toBeLessThan(hard);
+  await page.locator("#tfMazeLevel").selectOption("hard");
+  expect(await squares()).toBe(hard);
+
+  // The choice is kept with the challenge.
+  await page.locator("#tfMazeLevel").selectOption("fair");
+  const fair = await squares();
+  await page.locator("#tfSave").click();
+  await expect(page.locator("#taskForm")).toBeHidden();
+  await openChallenge();
+  await expect(page.locator("#tfMazeLevel")).toHaveValue("fair");
+  expect(await squares()).toBe(fair);
+});
