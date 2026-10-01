@@ -252,3 +252,36 @@ describe("a letter on every square", () => {
     assert.notEqual(Maze.build("Teri Buana", 1).grid, Maze.build("Teri Buana").grid);
   });
 });
+
+describe("the shape of the grid", () => {
+  const widthOf = (n, level) => Maze.build("a".repeat(n), 0, level);
+
+  test("a maze is as wide as it can be, so corridors run side by side", () => {
+    for (const n of [20, 40, 59, 70]) {
+      const m = widthOf(n, "hard");
+      // Wider than tall, unless it has run out of width and has to grow downwards instead.
+      assert.ok(m.cols >= m.rows || m.cols === Maze.MAX_COLS, `${n} letters: ${m.cols} by ${m.rows}`);
+    }
+  });
+
+  test("it never grows wider than a phone can show", () => {
+    for (const n of [20, 50, 80])
+      for (const level of ["easy", "fair", "hard"]) {
+        const m = widthOf(n, level);
+        assert.ok(m.cols <= Maze.MAX_COLS, `${n}/${level}: ${m.cols} columns`);
+        assert.ok(m.rows <= Maze.MAX_ROWS, `${n}/${level}: ${m.rows} rows`);
+      }
+  });
+
+  test("wider means more junctions to go wrong at", () => {
+    const junctions = m => {
+      let n = 0;
+      for (let cell = 0; cell < m.cols * m.rows; cell++)
+        if (Maze.neighbours(cell, m.cols, m.rows).filter(x => !(m.walls[cell] & Maze.step(cell, x, m.cols))).length >= 3) n++;
+      return n;
+    };
+    const hard = widthOf(59, "hard");
+    assert.ok(junctions(hard) >= 10, `${junctions(hard)} junctions in a hard maze`);
+    assert.ok(junctions(hard) > junctions(widthOf(59, "easy")), "and more than an easy one has");
+  });
+});

@@ -17,8 +17,9 @@
 const Maze = {
   N: 1, E: 2, S: 4, W: 8,
   MIN_LETTERS: 4,
-  MAX_COLS: 9,           // on a phone, more columns than this makes the squares too small to hit
+  MAX_COLS: 12,          // on a phone, more columns than this makes the squares too small to trace
   MAX_ROWS: 15,          // and more rows than this makes the maze taller than a phone screen
+  WIDE: 1.35,            // how much wider than tall to aim: side-by-side corridors, more ways to go wrong
   /* How much of the grid the route takes up. The rest becomes false corridors, so the less the
      route fills, the more there is to go wrong: that is what makes a maze hard. */
   LEVELS: { easy: 0.68, fair: 0.55, hard: 0.44 },
@@ -72,9 +73,9 @@ const Maze = {
      there are letters (the route has to reach from the top row to the bottom one), and never
      more than will fit on a phone. */
   shape(count, level){
-    const fill = Maze.fill(level);
-    const cols = Math.max(3, Math.min(Maze.MAX_COLS, Math.ceil(Math.sqrt(count / fill))));
-    const rows = Math.max(3, Math.min(count, Maze.MAX_ROWS, Math.ceil(count / (cols * fill))));
+    const squares = count / Maze.fill(level);
+    const cols = Math.max(3, Math.min(Maze.MAX_COLS, Math.round(Math.sqrt(squares * Maze.WIDE))));
+    const rows = Math.max(3, Math.min(count, Maze.MAX_ROWS, Math.ceil(squares / cols)));
     return { cols, rows };
   },
 
