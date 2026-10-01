@@ -15,8 +15,27 @@
 const Maze = {
   N: 1, E: 2, S: 4, W: 8,
   MIN_LETTERS: 4,
-  MAX_COLS: 12,          // on a phone, more than this makes the squares too small to hit
-  FILL: 0.62,            // how much of the grid the route takes up; the rest becomes dead ends
+  MAX_COLS: 9,           // on a phone, more columns than this makes the squares too small to hit
+  FILL: 0.6,             // how much of the grid the route takes up; the rest becomes dead ends
+
+  /* The same sentence always gives the same maze: the numbers come from the sentence itself,
+     not from chance, so a maze never changes under anyone. `attempt` is how "Try another" asks
+     for a different one, and is kept with the maze so that one is repeatable too. */
+  seed(sentence, attempt = 0){
+    let h = 0x811c9dc5;
+    for (const ch of `${attempt}:${String(sentence ?? "")}`) h = Math.imul(h ^ ch.codePointAt(0), 0x01000193) >>> 0;
+    return h || 1;
+  },
+  numbers(sentence, attempt = 0){
+    let s = Maze.seed(sentence, attempt);
+    return () => {                                       // mulberry32
+      s = (s + 0x6D2B79F5) >>> 0;
+      let t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  },
 
   // The squares a sentence needs: its letters and digits, without spaces or punctuation.
   letters(sentence){ return [...String(sentence ?? "")].filter(c => /[\p{L}\p{N}]/u.test(c)); },
@@ -97,16 +116,17 @@ const Maze = {
     return walls;
   },
 
-  /* Build a maze for a sentence. `random` is there so tests (and a "try another" button) can
-     ask for a different one. Throws, in plain words, when the sentence won't do. */
-  build(sentence, random = Math.random){
+  /* Build a maze for a sentence. The same sentence and attempt always give the same maze.
+     Throws, in plain words, when the sentence won't do. */
+  build(sentence, attempt = 0){
     const letters = Maze.letters(sentence);
     if (letters.length < Maze.MIN_LETTERS) throw new Error(`write a sentence with at least ${Maze.MIN_LETTERS} letters`);
+    const random = Maze.numbers(sentence, attempt);
     let { cols, rows } = Maze.shape(letters.length);
-    for (let attempt = 0; attempt < 24; attempt++) {
+    for (let roomier = 0; roomier < 24; roomier++) {
       const path = Maze.route(cols, rows, letters.length, random);
       if (path) return { cols, rows, walls: Maze.carve(cols, rows, path, random), path,
-        letters: letters.join(""), sentence: String(sentence).trim() };
+        letters: letters.join(""), sentence: String(sentence).trim(), attempt };
       rows += 1;                                           // give it another row and try again
     }
     throw new Error("couldn't lay a route for that sentence; try a shorter one");

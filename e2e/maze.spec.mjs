@@ -155,6 +155,21 @@ test("the sentence must make a maze, and a challenge can't have both a maze and 
 
   await expect(page.locator("#tfMazeInfo")).toContainText("No maze.");
   await expect(page.locator("#tfMazeAnother")).toBeHidden();
+
+  /* The same sentence always makes the same maze, so nobody has to wonder which one teams will
+     get; Try another is the only way to a different one. */
+  const drawn = () => page.locator("#tfMazePrev svg").innerHTML();
+  await page.locator("#tfMazeSentence").fill("Sang Nila Utama reigned over it and was given the name of Seri Teri Buana.");
+  await page.locator("#tfMazeMake").click();
+  const first = await drawn();
+  await page.locator("#tfMazeMake").click();
+  expect(await drawn()).toBe(first);
+  await page.locator("#tfMazeAnother").click();
+  const second = await drawn();
+  expect(second).not.toBe(first);
+  await page.locator("#tfMazeMake").click();
+  expect(await drawn(), "Make the maze always comes back to the same one").toBe(first);
+  await page.locator("#tfMazeSentence").fill("");
   await page.locator("#tfMazeSentence").fill("Hi!");
   await page.locator("#tfMazeMake").click();
   await expect(page.locator("#tfMazeInfo")).toContainText("at least 4 letters");
@@ -185,4 +200,30 @@ test("the sentence must make a maze, and a challenge can't have both a maze and 
   await expect(page.locator("#taskForm")).toBeHidden();
   await expect(page.locator("#taskList li").first().locator(".tpts")).not.toContainText("maze");
   await expect(page.locator("#exportGame")).toBeEnabled();
+});
+
+test("Try another keeps moving on, even after saving and reopening the challenge", async ({ app, page }) => {
+  await app.open();
+  await app.openTools();
+  await page.locator("#capTarget").selectOption(THK.id);
+  const drawn = () => page.locator("#tfMazePrev svg").innerHTML();
+  const openChallenge = () => page.locator("#taskList li").first().locator(".tedit").click();
+
+  await openChallenge();
+  await page.locator("#tfMazeSentence").fill(SENTENCE);
+  await page.locator("#tfMazeMake").click();
+  const first = await drawn();
+  await page.locator("#tfMazeAnother").click();
+  const second = await drawn();
+  expect(second).not.toBe(first);
+  await page.locator("#tfSave").click();
+  await expect(page.locator("#taskForm")).toBeHidden();
+
+  // Reopened, it's still the one that was saved, and Try another goes on to a third.
+  await openChallenge();
+  expect(await drawn()).toBe(second);
+  await page.locator("#tfMazeAnother").click();
+  const third = await drawn();
+  expect(third).not.toBe(second);
+  expect(third).not.toBe(first);
 });

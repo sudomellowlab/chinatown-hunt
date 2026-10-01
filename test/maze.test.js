@@ -3,17 +3,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { Maze } from "../src/maze.js";
 
-// A repeatable "random" so a failure can be looked at again (mulberry32).
-function seeded(seed){
-  return () => {
-    seed = (seed + 0x6D2B79F5) >>> 0;
-    let t = seed;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const SENTENCE = "Sang Nila Utama reigned over it and was given the name Seri Teri Buana";
+const SENTENCE = "Sang Nila Utama reigned over it and was given the name of Seri Teri Buana.";
 
 // Every square reachable from the first one, walking only where there is no wall.
 function reachable(maze){
@@ -37,10 +27,10 @@ function passages(maze){
 }
 
 describe("building a maze from a sentence", () => {
-  const maze = Maze.build(SENTENCE, seeded(7));
+  const maze = Maze.build(SENTENCE);
 
   test("one square per letter, spaces and punctuation left out", () => {
-    assert.equal(maze.letters, "SangNilaUtamareignedoveritandwasgiventhenameSeriTeriBuana");
+    assert.equal(maze.letters, "SangNilaUtamareignedoveritandwasgiventhenameofSeriTeriBuana");
     assert.equal(maze.path.length, maze.letters.length);
     assert.equal(maze.sentence, SENTENCE);
   });
@@ -84,15 +74,19 @@ describe("building a maze from a sentence", () => {
     assert.ok(off >= 4, `${off} squares off the route`);
   });
 
-  test("the same seed gives the same maze, a different one gives another", () => {
-    assert.deepEqual(Maze.build(SENTENCE, seeded(7)), maze);
-    assert.notDeepEqual(Maze.build(SENTENCE, seeded(8)).path, maze.path);
+  test("the same sentence always gives the same maze, on any machine", () => {
+    assert.deepEqual(Maze.build(SENTENCE), maze, "built again, square for square");
+    assert.deepEqual(Maze.build(SENTENCE), Maze.build(SENTENCE));
+    assert.equal(maze.attempt, 0);
+    assert.notDeepEqual(Maze.build(SENTENCE, 1).path, maze.path, "Try another gives a different one");
+    assert.deepEqual(Maze.build(SENTENCE, 1), Maze.build(SENTENCE, 1), "and that one is repeatable too");
+    assert.notDeepEqual(Maze.build(SENTENCE + " indeed").path, maze.path, "a different sentence, a different maze");
   });
 
   test("mazes for all sorts of sentences hold together", () => {
     for (const [i, sentence] of ["Four", "Teri Buana", SENTENCE, "A much longer sentence to walk through, with plenty of letters in it indeed",
       "1819 and 1822", "Façade — naïve, résumé"].entries()) {
-      const m = Maze.build(sentence, seeded(100 + i));
+      const m = Maze.build(sentence);
       assert.equal(Maze.problem(m), null, sentence);
       assert.equal(m.letters.length, Maze.letters(sentence).length, sentence);
       assert.equal(reachable(m).size, m.cols * m.rows, sentence);
@@ -102,12 +96,12 @@ describe("building a maze from a sentence", () => {
 
   test("a sentence with too few letters is refused in plain words", () => {
     for (const bad of ["", "   ", "Hi!", "...", null])
-      assert.throws(() => Maze.build(bad, seeded(1)), /at least 4 letters/);
+      assert.throws(() => Maze.build(bad), /at least 4 letters/);
   });
 });
 
 describe("checking a maze the game is given", () => {
-  const good = Maze.build("Teri Buana", seeded(3));
+  const good = Maze.build("Teri Buana");
   const copy = () => structuredClone(good);
 
   test("a sound maze has no problem", () => {

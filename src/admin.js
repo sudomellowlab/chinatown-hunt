@@ -765,7 +765,8 @@ function deleteTask(l, i){
 function cleanMaze(task){
   const maze = Play.mazeOf(task);
   return maze ? { maze: { cols: maze.cols, rows: maze.rows, walls: [...maze.walls], path: [...maze.path],
-    letters: maze.letters, sentence: String(maze.sentence ?? "").trim() } } : {};
+    letters: maze.letters, sentence: String(maze.sentence ?? "").trim(),
+    ...(maze.attempt ? { attempt: maze.attempt } : {}) } } : {};
 }
 function drawMazePreview(box, maze){
   box.replaceChildren();
@@ -809,15 +810,17 @@ function renderMazeEditor(){
   $("tfMazeRemove").hidden = !maze;
   drawMazePreview($("tfMazePrev"), maze);
 }
-function makeMaze(){
+function makeMaze(attempt = 0){
   const task = editing?.task; if (!task) return;
-  try { task.maze = Maze.build($("tfMazeSentence").value); }
+  try { task.maze = Maze.build($("tfMazeSentence").value, attempt); }
   catch(e){ delete task.maze; $("tfMazeInfo").textContent = `Can't make a maze: ${e.message}.`; $("tfMazeInfo").classList.add("bad"); drawMazePreview($("tfMazePrev"), null); return; }
   $("tfErrors").textContent = "";
   renderMazeEditor();
 }
-$("tfMazeMake").onclick = makeMaze;
-$("tfMazeAnother").onclick = makeMaze;
+/* The same sentence always makes the same maze, so Make the maze is repeatable; Try another
+   asks for the next one along, and that one is repeatable too. */
+$("tfMazeMake").onclick = () => makeMaze(0);
+$("tfMazeAnother").onclick = () => makeMaze((Play.mazeOf(editing?.task)?.attempt ?? 0) + 1);
 $("tfMazeRemove").onclick = () => { if (editing?.task) delete editing.task.maze; renderMazeEditor(); };
 $("tfMazeSentence").addEventListener("input", renderMazeEditor);
 

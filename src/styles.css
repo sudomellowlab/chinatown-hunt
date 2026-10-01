@@ -368,7 +368,7 @@ figure.pic.tappable img{cursor:zoom-in}
 
 /* ---------- a maze on a challenge ---------- */
 #mazeBox{margin:4px 0 10px}
-#mazeGrid{display:block;width:100%;height:auto;max-height:62vh;background:#fff;border:1px solid var(--ink);
+#mazeGrid{display:block;width:100%;height:auto;max-height:70vh;background:#fff;border:1px solid var(--ink);
   touch-action:none;-webkit-user-select:none;user-select:none}
 #mazeGrid .mazewalls line{stroke:var(--ink);stroke-width:.9;stroke-linecap:square}
 #mazeGrid #mazeTrail rect{fill:rgba(46,107,94,.22)}
