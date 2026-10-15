@@ -69,6 +69,7 @@ const hooks = {
   mapSource: [],      // (mapStatus) whenever the base map changes or fails
   revealPaused: null, // () → true while the clues must not come up on their own (the admin file, when not testing them)
   pinCreated: [],     // (location, marker) each time a location's pin is (re)drawn
+  sheet: [],          // () after the location sheet (or the starting challenge) is drawn: the hosted file's LoQuiz sync
 };
 
 /* ════════════════════════════════════════════════════════════════════
@@ -656,6 +657,7 @@ function renderSheet(){
     );
   }
   $("sheet").classList.add("up");
+  hooks.sheet.forEach(fn => fn());
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -748,6 +750,7 @@ function renderStartChallenge(){
     }
   }
   $("sheet").classList.add("up");
+  hooks.sheet.forEach(fn => fn());
 }
 function finishStart(){
   const next = Play.finishStart(state.progress, GAME.start);
@@ -900,5 +903,5 @@ showStart();
 
 export { BUILD, KEY, store, state, save, feed, hooks, ui, map, pins, rings, onFix, markReached, styleRing, styleLocation,
   mapStatus, setMapSource, rebuildLocations,
-  $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, finishActive, finishStart, locationById,
+  $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, finishActive, finishStart, openStart, locationById,
   msLeft, startReal, stopReal, showStart, hideStart, h };

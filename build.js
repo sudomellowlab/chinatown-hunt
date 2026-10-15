@@ -1,6 +1,8 @@
 // Builds the two deliverables from src/. Plain Node, no dependencies.
 //   node build.js   →   dist/chinatown-hunt-admin.html   the admin file: set up, test, export
 //                       dist/chinatown-hunt.html         a participant file with the default game
+//                       dist/chinatown-hunt-hosted.html  the participant file the Game Editors site hands out:
+//                                                        live content from the relay, and LoQuiz sync
 import fs from "node:fs";
 import path from "node:path";
 import { GAME } from "./src/game.js";
@@ -41,10 +43,20 @@ function page(admin, modules) {
 // organiser's password, and unlock.js runs them once that password is typed.
 const template = page(false, [inline("engine.js"), inline("play.js"), inline("pack.js"), inline("vault.js"), inline("mazeview.js"),
   'const GAME = Pack.open("__GAME_PACK__");', inline("app.js"), inline("unlock.js")]);
+/* The hosted participant file: the same page, but its content comes from the Game Editors site's relay
+   on every load (hosted.js) and it follows LoQuiz (loquiz.js, sync.js). The editors site fills hosted.js's
+   three slots when it hands the file out; the field tools arrive in the published content, not a slot. */
+const hosted = page(false, [inline("engine.js"), inline("play.js"), inline("loquiz.js"), inline("pack.js"), inline("vault.js"), inline("mazeview.js"),
+  inline("hosted.js"), inline("app.js"),
+  swap(inline("unlock.js"), 'const FIELD_PACK = "__FIELD_PACK__";', "const FIELD_PACK = LIVE.fieldPack;", "field pack slot in unlock.js"),
+  inline("sync.js")]);
+for (const slot of ['"__HOSTED_RELAY__"', '"__HOSTED_GAME_PACK__"', '"__HOSTED_FIELD_PACK__"'])
+  if (hosted.split(slot).length !== 2) throw new Error(`build: the hosted file needs exactly one ${slot}`);
 // Each marker is distinctive enough not to catch innocent code (setPoi( not setPoi, which is in setPointerCapture).
 for (const admin of ['id="drawer"', 'id="devbtn"', "setPoi(", "Walk.record", "__PARTICIPANT_TEMPLATE__", "__FIELD_TOOLS__", "startPreview", "previewbar", "pvGo",
   "ftPanel", "Field tools", "Pretend to be", "ftRestart"])
-  if (template.includes(admin)) throw new Error(`build: admin code leaked into the participant file (${admin})`);
+  for (const [file, html] of [["participant", template], ["hosted", hosted]])
+    if (html.includes(admin)) throw new Error(`build: admin code leaked into the ${file} file (${admin})`);
 
 /* The single-maze page: one maze to try, nothing else. The admin file carries it the same way
    it carries the participant page, and fills in the maze when the organiser exports one. */
@@ -57,7 +69,7 @@ for (const leak of ['id="drawer"', "Play.", "GAME.locations", "Maze.build", "nav
 // Admin page: everything, plus the participant page embedded so Export can produce it.
 const templateLiteral = JSON.stringify(template).replace(/</g, "\\u003c");
 const adminPage = page(true, [
-  inline("engine.js"), inline("play.js"), inline("session.js"), inline("poi.js"), inline("pack.js"), inline("vault.js"), inline("maze.js"), inline("mazeview.js"), inline("game.js"), inline("app.js"),
+  inline("engine.js"), inline("play.js"), inline("loquiz.js"), inline("session.js"), inline("poi.js"), inline("pack.js"), inline("vault.js"), inline("maze.js"), inline("mazeview.js"), inline("game.js"), inline("app.js"),
   swap(swap(swap(inline("admin.js"), '"__PARTICIPANT_TEMPLATE__"', templateLiteral, "participant template slot in admin.js"),
     '"__FIELD_TOOLS__"', JSON.stringify(inline("field.js")).replace(/</g, "\\u003c"), "field tools slot in admin.js"),
     '"__MAZE_PAGE__"', JSON.stringify(mazePage).replace(/</g, "\\u003c"), "single-maze page slot in admin.js"),
@@ -73,7 +85,7 @@ for (const text of [...(GAME.clues || []).map(c => c.text), ...(GAME.suspects ||
   if (text && playable.includes(text)) throw new Error(`build: readable clue or suspect in the participant file ("${text.slice(0, 30)}")`);
 
 fs.mkdirSync(path.join(root, "dist"), { recursive: true });
-for (const [name, html] of [["chinatown-hunt-admin.html", adminPage], ["chinatown-hunt.html", playable]]) {
+for (const [name, html] of [["chinatown-hunt-admin.html", adminPage], ["chinatown-hunt.html", playable], ["chinatown-hunt-hosted.html", hosted]]) {
   fs.writeFileSync(path.join(root, "dist", name), html);
   console.log(`dist/${name}`.padEnd(32), `${(html.length / 1024).toFixed(1)} KB`);
 }
