@@ -5,6 +5,7 @@ import { Play } from "./play.js";
 import { Maze } from "./maze.js";
 import { Pack } from "./pack.js";
 import { Vault } from "./vault.js";
+import { LoQuiz } from "./loquiz.js";
 import { GAME } from "./game.js";
 import { BUILD, KEY, store, state, save, feed, hooks, ui, map, pins, rings, onFix, styleRing, styleLocation, mapStatus, setMapSource, rebuildLocations,
   $, render, renderClock, renderSheet, renderReveal, checkReveal, activateLocation, finishActive, locationById,
@@ -61,6 +62,8 @@ function applyContent(game){
   for (const k of ["durationMinutes", "revealMinutes"]) if (Number.isFinite(game[k])) GAME[k] = game[k];
   for (const k of ["clues", "suspects"]) if (Array.isArray(game[k])) GAME[k] = structuredClone(game[k]);
   if (game.map && typeof game.map === "object") GAME.map = { ...GAME.map, ...game.map };
+  // LoQuiz sync settings (Synchro Mode), set on the editors site.
+  if (game.sync && typeof game.sync === "object") GAME.sync = structuredClone(game.sync);
   /* Mazes saved before every square carried a letter get their decoys filled in, not thrown
      away; the mended draft is written back, so it only happens once. */
   let mended = false;
@@ -72,6 +75,7 @@ function applyContent(game){
   if (mended) queueMicrotask(saveDraft);
   if ("start" in game) GAME.start = game.start ? {
     name: game.start.name ?? "", lockText: game.start.lockText ?? "", arrivalText: game.start.arrivalText ?? "", password: game.start.password ?? "",
+    ...(LoQuiz.linked(game.start, "loquizUnlock") ? { loquizUnlock: LoQuiz.links(game.start.loquizUnlock) } : {}),
     // Where it stood before it was promoted, so Send back to the map still knows.
     ...(game.start.from && typeof game.start.from === "object" ? { from: structuredClone(game.start.from) } : {}),
     tasks: structuredClone(game.start.tasks || []).map(t => (t.maze ? { ...t, maze: Maze.withLetters(t.maze) } : t)),
@@ -572,7 +576,8 @@ const canExport = PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).length === 2 && PAR
 
 /* A challenge is its text, an optional picture and, when the organiser set one, the answer teams
    must give here. Anything else left over from earlier drafts (points, hints) is dropped. */
-const cleanTask = t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { image: t.image } : {}), ...(cleanAnswer(t.answer)), ...cleanDoc(t), ...cleanMaze(t) });
+const cleanTask = t => ({ id: t.id, prompt: t.prompt ?? "", ...(t.image ? { image: t.image } : {}), ...(cleanAnswer(t.answer)), ...cleanDoc(t), ...cleanMaze(t),
+  ...(LoQuiz.linked(t) ? { loquiz: LoQuiz.links(t.loquiz) } : {}) });     // LoQuiz questions that move teams past it
 // A document is its pages in order, with the wording of the button that opens it.
 function cleanDoc(task){
   const pages = Play.docPages(task);
@@ -600,21 +605,30 @@ function gameForExport(){
   });
   const s = GAME.start;
   game.start = s ? { name: s.name ?? "", lockText: s.lockText ?? "", arrivalText: s.arrivalText ?? "", password: s.password ?? "",
-    ...(s.from ? { from: s.from } : {}), tasks: (s.tasks || []).map(cleanTask) } : null;
+    ...(s.from ? { from: s.from } : {}), ...(LoQuiz.linked(s, "loquizUnlock") ? { loquizUnlock: LoQuiz.links(s.loquizUnlock) } : {}),
+    tasks: (s.tasks || []).map(cleanTask) } : null;
   return game;
 }
 // The starting challenge as it goes into the exported file: its heading and password screen text (shown
 // before the password), and the rest encrypted with its password, so the file shows neither the password
-// nor the challenges until a team types it.
-async function sealStart({ name, lockText, password, ...content }){
-  return { name, lockText, sealed: await Vault.seal(JSON.stringify(content), Play.normalizePassword(password)) };
+// nor the challenges until a team types it. Its LoQuiz unlock link stays outside the seal: the hosted
+// file has to know which LoQuiz answer brings the password before it can open anything.
+async function sealStart({ name, lockText, password, loquizUnlock, ...content }){
+  return { name, lockText, ...(loquizUnlock ? { loquizUnlock } : {}), sealed: await Vault.seal(JSON.stringify(content), Play.normalizePassword(password)) };
+}
+// The game and the field tools as they go into a participant file: the sealed game pack, and the
+// tools encrypted with the field tools password (null without one).
+async function participantPacks(game = gameForExport()){
+  const password = fieldPassword();
+  const fieldPack = password ? await Vault.seal(FIELD_TOOLS, password) : null;
+  if (game.start) game = { ...game, start: await sealStart(game.start) };
+  return { gamePack: Pack.seal(game), fieldPack };
 }
 async function participantHtml(game = gameForExport()){
-  const password = fieldPassword();
-  const tools = password ? JSON.stringify(await Vault.seal(FIELD_TOOLS, password)) : "null";
-  if (game.start) game = { ...game, start: await sealStart(game.start) };
-  return PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).join(JSON.stringify(Pack.seal(game))).split(FIELD_PACK_SLOT).join(tools);
+  const { gamePack, fieldPack } = await participantPacks(game);
+  return PARTICIPANT_TEMPLATE.split(GAME_PACK_SLOT).join(JSON.stringify(gamePack)).split(FIELD_PACK_SLOT).join(JSON.stringify(fieldPack));
 }
+
 
 /* The field tools password: kept in this browser only, never in the draft or the game file.
    Empty means the exported file has no field tools at all. */
@@ -1542,3 +1556,19 @@ document.title = `${GAME.title} · ${PREVIEW ? "Preview" : "Admin"}`;
 renderGameText(); renderPoi(); renderMystery(); renderStartEditor(); renderExport(); setSrcButtons(); renderLog(); render(); checkReveal();
 if (PREVIEW) startPreview();
 else if (wideScreen.matches) toggleDrawer(true);      // on a computer, open with the tools showing
+
+/* HOSTED — when the editors site opens this file (it sets window.__CTH_HOSTED__ first), it keeps the
+   draft and publishes from there: it puts its saved draft into this browser before the page loads,
+   reads the draft back to save it, and asks for the packs to publish. It also edits the LoQuiz links,
+   which have no controls in this panel, through `update`. */
+if (globalThis.__CTH_HOSTED__ && !PREVIEW) {
+  globalThis.cthHosted = {
+    draftKey: DRAFT_KEY, fieldPassKey: FIELD_PASS_KEY,
+    game: () => gameForExport(),
+    problems: () => exportProblems(),
+    packs: () => participantPacks(),
+    // Change the live game (only the LoQuiz links and sync settings, from the editors site), then save it as usual.
+    update(fn){ fn(GAME); saveDraft(); },
+  };
+  document.body.classList.add("hosted");
+}
